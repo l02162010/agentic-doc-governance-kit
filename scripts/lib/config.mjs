@@ -34,6 +34,7 @@ export const DEFAULT_GENERATED_REQUIRED_PATHS = [
   "scripts/docs-integrity-check.mjs",
   "scripts/skills-integrity-check.mjs",
   "scripts/agent-closeout-check.mjs",
+  "scripts/lib/args.mjs",
   "scripts/lib/config.mjs",
   "scripts/lib/feature-lifecycle.mjs",
 ];

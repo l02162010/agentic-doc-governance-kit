@@ -27,6 +27,9 @@ Every issue should identify owner doc, observed value, recommended fix, forbidde
 | `BROKEN_INTERNAL_LINK` | `error` | markdown points to a missing repo-local path | Fix the link or restore the target file. |
 | `MALFORMED_INTERNAL_LINK` | `error` | markdown contains an invalid repo-local link target | Use a valid path or percent-encode special characters correctly. |
 | `FEAT_BACKLOG_LINK_MISSING` | `error` | feature owner doc is not indexed by `active-backlog.md` | Add one backlog row pointing to the owner doc. |
+| `FEAT_BACKLOG_DOC_MISSING` | `error` | backlog row has no Primary doc link | Add a Primary doc link to the feature owner doc. |
+| `FEAT_BACKLOG_DOC_MISMATCH` | `error` | backlog row points at a different doc than the active feature owner doc | Point the row at the single active owner doc. |
+| `FEAT_OWNER_DUPLICATE` | `error` | more than one active owner doc exists for a feature ID | Merge or archive duplicates until exactly one owner doc remains. |
 | `BACKLOG_ROW_MISSING` | `error` | closeout was requested for a feature missing from `active-backlog.md` | Add the backlog row before closeout. |
 | `FEAT_STATUS_INVALID` | `error` | feature doc uses a lifecycle status outside `IDEA`, `PLANNED`, `IN_PROGRESS`, `VERIFYING`, `SHIPPED`, `ARCHIVED` | Replace the invalid status with an allowed lifecycle status. |
 | `BACKLOG_STATUS_INVALID` | `error` | backlog row uses a lifecycle status outside the allowed vocabulary | Replace the invalid backlog status. |

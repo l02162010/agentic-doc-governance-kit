@@ -3,28 +3,47 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 
-const args = process.argv.slice(2);
-const jsonMode = args.includes("--json");
-const help = args.includes("--help") || args.includes("-h");
-const selfTest = args.includes("--self-test");
-const root = path.resolve(valueFor("--root") ?? process.cwd());
-const featureArg = valueFor("--feature");
-const config = loadGovernanceConfig(root);
-const closeoutConfig = config.closeout;
+let options;
+try {
+  options = parseArgs(process.argv.slice(2), {
+    aliases: { h: "help" },
+    flags: {
+      root: { type: "string" },
+      feature: { type: "string" },
+      "self-test": { type: "boolean" },
+      json: { type: "boolean" },
+      help: { type: "boolean" },
+    },
+  });
+} catch (error) {
+  if (error instanceof UsageError) {
+    console.error(error.message);
+    process.exit(error.exitCode);
+  }
+  throw error;
+}
+const jsonMode = Boolean(options.flags.json);
+const help = Boolean(options.flags.help);
+const selfTest = Boolean(options.flags["self-test"]);
 
 if (help) {
   console.log(`Usage: node scripts/agent-closeout-check.mjs --feature FEAT-xxx [--root <dir>] [--self-test] [--json]`);
   process.exit(0);
 }
 
-function valueFor(flag) {
-  const index = args.indexOf(flag);
-  if (index === -1) return null;
-  return args[index + 1] ?? null;
+if (options.positionals.length > 0) {
+  console.error(`agent-closeout-check does not accept positional arguments: ${options.positionals.join(" ")}`);
+  process.exit(2);
 }
+
+const root = path.resolve(options.flags.root ?? process.cwd());
+const featureArg = options.flags.feature;
+const config = loadGovernanceConfig(root);
+const closeoutConfig = config.closeout;
 
 function abs(relPath) {
   return path.join(root, relPath);
@@ -128,18 +147,42 @@ function hasWaiver(criterion, manifestValues) {
   return Boolean((id && normalizedWaiver.includes(id.toLowerCase())) || (text && normalizedWaiver.includes(text.toLowerCase())));
 }
 
-function backlogStatus(featureId) {
+function normalizeLink(ownerDoc, rawTarget) {
+  let target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
+  if (!target || /^(https?:|mailto:|tel:|app:\/\/)/.test(target)) return null;
+  if (target.startsWith("/")) target = target.slice(1);
+  return path.normalize(path.join(path.dirname(ownerDoc), decodeURIComponent(target))).split(path.sep).join("/");
+}
+
+function backlogRow(featureId) {
   if (!exists(closeoutConfig.backlogPath)) return null;
   for (const line of readText(closeoutConfig.backlogPath).split(/\r?\n/)) {
     if (!line.startsWith(`| \`${featureId}\``)) continue;
-    return normalizeFeatureStatus(line.split("|").slice(1, -1).map((cell) => cell.trim())[2]);
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
+    let docPath = null;
+    let linkError = null;
+    if (link) {
+      try {
+        docPath = normalizeLink(closeoutConfig.backlogPath, link);
+      } catch (error) {
+        linkError = error.message;
+      }
+    }
+    return {
+      status: normalizeFeatureStatus(cells[2]),
+      docPath,
+      linkError,
+    };
   }
   return null;
 }
 
-function findFeatureDoc(featureId) {
-  const candidates = walk(closeoutConfig.featureRoot, (file) => path.basename(file).startsWith(featureId) && file.endsWith(".md"));
-  return candidates[0] ?? null;
+function findFeatureDocs(featureId) {
+  return walk(closeoutConfig.featureRoot, (file) => {
+    const base = path.basename(file);
+    return (base === `${featureId}.md` || base.startsWith(`${featureId}-`)) && base.endsWith(".md");
+  });
 }
 
 function evaluate(featureId, featurePath, text, rowStatus) {
@@ -302,10 +345,64 @@ if (!featureArg) {
   process.exit(2);
 }
 
-const featurePath = findFeatureDoc(featureArg);
-const issues = featurePath
-  ? evaluate(featureArg, featurePath, readText(featurePath), backlogStatus(featureArg))
-  : [{
+const featureDocs = findFeatureDocs(featureArg);
+const row = backlogRow(featureArg);
+const backlogParseIssue = row?.linkError
+  ? {
+      code: "MALFORMED_INTERNAL_LINK",
+      severity: "error",
+      ownerDoc: closeoutConfig.backlogPath,
+      relatedDocs: [],
+      observed: { featureId: featureArg, error: row.linkError },
+      rationale: "Backlog Primary doc link must be parseable.",
+      recommendedFix: "Use a valid markdown link target or percent-encode the path correctly.",
+      forbiddenFix: "Do not close out while backlog traceability is ambiguous.",
+      downgradeCondition: "Do not downgrade.",
+      confidence: 1,
+    }
+  : null;
+let featurePath = featureDocs[0] ?? null;
+let issues;
+
+if (featureDocs.length > 1) {
+  featurePath = null;
+  issues = [{
+    code: "FEAT_OWNER_DUPLICATE",
+    severity: "error",
+    ownerDoc: closeoutConfig.featureRoot,
+    relatedDocs: featureDocs,
+    observed: { featureId: featureArg, ownerDocs: featureDocs },
+    rationale: "A formal feature must have exactly one active owner doc.",
+    recommendedFix: "Keep one feature owner doc and archive or merge duplicates before closeout.",
+    forbiddenFix: "Do not close out from an arbitrary matching feature doc.",
+    downgradeCondition: "Do not downgrade.",
+    confidence: 1,
+  }];
+} else if (featurePath) {
+  issues = evaluate(featureArg, featurePath, readText(featurePath), row?.status ?? null);
+  if (row && !row.docPath && !row.linkError) {
+    addIssue(
+      issues,
+      "FEAT_BACKLOG_DOC_MISSING",
+      "error",
+      closeoutConfig.backlogPath,
+      { featureId: featureArg },
+      "Add a Primary doc link from the backlog row to the feature owner doc.",
+      "Do not rely on feature IDs alone for owner-doc traceability.",
+    );
+  } else if (row?.docPath && row.docPath !== featurePath) {
+    addIssue(
+      issues,
+      "FEAT_BACKLOG_DOC_MISMATCH",
+      "error",
+      closeoutConfig.backlogPath,
+      { featureId: featureArg, backlogDocPath: row.docPath, ownerDoc: featurePath },
+      "Point the backlog Primary doc link at the single active feature owner doc.",
+      "Do not close out a feature whose backlog index points elsewhere.",
+    );
+  }
+} else {
+  issues = [{
       code: "FEATURE_NOT_FOUND",
       severity: "error",
       ownerDoc: closeoutConfig.featureRoot,
@@ -317,6 +414,9 @@ const issues = featurePath
       downgradeCondition: "Do not downgrade.",
       confidence: 1,
     }];
+}
+
+if (backlogParseIssue) issues.push(backlogParseIssue);
 
 const report = { ok: issues.every((item) => item.severity !== "error"), root, featureId: featureArg, featurePath, issues };
 

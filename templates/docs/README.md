@@ -31,3 +31,9 @@ node scripts/agent-closeout-check.mjs --feature FEAT-001
 ```
 
 The generated `.agentic-doc-governance.json` defines the docs roots, skill roots, and required generated files for this project.
+
+To scaffold a new feature owner doc and backlog row:
+
+```bash
+agentic-doc-governance feature add FEAT-002 "Feature Name"
+```

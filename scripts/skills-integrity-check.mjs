@@ -3,24 +3,41 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 
-const args = process.argv.slice(2);
-const jsonMode = args.includes("--json");
-const help = args.includes("--help") || args.includes("-h");
-const root = path.resolve(valueFor("--root") ?? process.cwd());
-const config = loadGovernanceConfig(root);
+let options;
+try {
+  options = parseArgs(process.argv.slice(2), {
+    aliases: { h: "help" },
+    flags: {
+      root: { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean" },
+    },
+  });
+} catch (error) {
+  if (error instanceof UsageError) {
+    console.error(error.message);
+    process.exit(error.exitCode);
+  }
+  throw error;
+}
+const jsonMode = Boolean(options.flags.json);
+const help = Boolean(options.flags.help);
 
 if (help) {
   console.log(`Usage: node scripts/skills-integrity-check.mjs [--root <dir>] [--json]`);
   process.exit(0);
 }
 
-function valueFor(flag) {
-  const index = args.indexOf(flag);
-  if (index === -1) return null;
-  return args[index + 1] ?? null;
+if (options.positionals.length > 0) {
+  console.error(`skills-integrity-check does not accept positional arguments: ${options.positionals.join(" ")}`);
+  process.exit(2);
 }
+
+const root = path.resolve(options.flags.root ?? process.cwd());
+const config = loadGovernanceConfig(root);
 
 function abs(relPath) {
   return path.join(root, relPath);

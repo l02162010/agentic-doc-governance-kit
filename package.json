@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "description": "A template and checker toolkit for AI-agent-readable documentation governance and autonomous feature delivery.",
   "type": "module",
+  "sideEffects": false,
   "bin": {
     "agentic-doc-governance": "bin/agentic-doc-governance.mjs"
   },
   "files": [
     ".agentic-doc-governance.json",
     "AGENTS.template.md",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
+    "RELEASE.md",
     "bin",
     "examples",
     "scripts",
@@ -24,6 +27,10 @@
     "test": "node --test && npm run check",
     "prepack": "npm test"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "npm@11.11.1",
   "keywords": [
     "ai-agent",
     "documentation-governance",

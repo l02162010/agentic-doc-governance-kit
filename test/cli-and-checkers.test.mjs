@@ -102,6 +102,82 @@ test("init dry-run reports files without creating the target", () => {
   assert.equal(fs.existsSync(target), false);
 });
 
+test("checkers reject unknown options and missing flag values", () => {
+  const unknown = run([path.join(repoRoot, "scripts", "docs-integrity-check.mjs"), "--wat"]);
+  assert.equal(unknown.status, 2);
+  assert.match(unknown.stderr, /Unknown option --wat/);
+  assert.doesNotMatch(unknown.stderr, /UsageError|at /);
+
+  const missingValue = run([path.join(repoRoot, "scripts", "agent-closeout-check.mjs"), "--root", "--json"]);
+  assert.equal(missingValue.status, 2);
+  assert.match(missingValue.stderr, /Missing value for --root/);
+  assert.doesNotMatch(missingValue.stderr, /UsageError|at /);
+});
+
+test("feature add creates a traceable owner doc and backlog row", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const result = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-002",
+    "Team Dashboard",
+    "--root",
+    target,
+    "--risk",
+    "T2",
+    "--summary",
+    "Show team status at a glance.",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    fs.existsSync(path.join(target, "docs", "canonical", "features", "FEAT-002-team-dashboard.md")),
+    true,
+  );
+  assert.match(
+    fs.readFileSync(path.join(target, "docs", "canonical", "active-backlog.md"), "utf8"),
+    /\| `FEAT-002` \| Team Dashboard \| `IDEA` \| `P2` \| Show team status at a glance\. \| \[`FEAT-002-team-dashboard\.md`\]\(features\/FEAT-002-team-dashboard\.md\) \|/,
+  );
+  assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
+});
+
+test("feature add preflights backlog path before creating owner doc", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["docs"] },
+      skills: { roots: [] },
+      generated: { requiredPaths: [] },
+      closeout: {
+        backlogPath: "governance/backlog.md",
+        featureRoot: "docs/canonical/features",
+      },
+    }),
+  );
+  fs.writeFileSync(path.join(target, "governance"), "blocking file\n");
+
+  const result = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-777",
+    "Blocked Backlog",
+    "--root",
+    target,
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /parent path is a file/);
+  assert.equal(
+    fs.existsSync(path.join(target, "docs", "canonical", "features", "FEAT-777-blocked-backlog.md")),
+    false,
+  );
+});
+
 test("generated check reports missing managed files", () => {
   const target = path.join(tempDir(), "product");
   assert.equal(run([cli, "init", target]).status, 0);
@@ -121,6 +197,51 @@ test("generated check reports missing managed files", () => {
   assert.equal(report.issues.some((issue) => issue.code === "GENERATED_PATH_MISSING"), true);
 });
 
+test("docs check reports duplicate feature owner docs", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  fs.copyFileSync(
+    path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md"),
+    path.join(target, "docs", "canonical", "features", "FEAT-001-duplicate.md"),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "FEAT_OWNER_DUPLICATE"),
+    true,
+  );
+});
+
+test("docs check reports backlog primary doc mismatch", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("features/FEAT-001-example-feature.md", "features/feature-template.md"),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "FEAT_BACKLOG_DOC_MISMATCH"),
+    true,
+  );
+});
+
 test("docs check reports malformed local links instead of crashing", () => {
   const target = tempDir();
   fs.mkdirSync(path.join(target, "docs"), { recursive: true });
@@ -138,10 +259,9 @@ test("docs check reports malformed local links instead of crashing", () => {
   ]);
 
   assert.notEqual(result.status, 0);
-  assert.equal(
-    JSON.parse(result.stdout).issues.some((issue) => issue.code === "MALFORMED_INTERNAL_LINK"),
-    true,
-  );
+  const issues = JSON.parse(result.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "MALFORMED_INTERNAL_LINK"), true);
+  assert.equal(issues.some((issue) => issue.code === "FEAT_BACKLOG_DOC_MISMATCH"), false);
 });
 
 test("docs check reports malformed backlog links instead of crashing", () => {
@@ -265,6 +385,55 @@ test("closeout check rejects shipped unchecked acceptance without waiver", () =>
   assert.notEqual(report.status, 0);
   assert.equal(
     JSON.parse(report.stdout).issues.some((issue) => issue.code === "SHIPPED_ACCEPTANCE_INCOMPLETE"),
+    true,
+  );
+});
+
+test("closeout check refuses duplicate feature owner docs", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  fs.copyFileSync(
+    path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md"),
+    path.join(target, "docs", "canonical", "features", "FEAT-001-parallel.md"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  assert.equal(
+    JSON.parse(report.stdout).issues.some((issue) => issue.code === "FEAT_OWNER_DUPLICATE"),
+    true,
+  );
+});
+
+test("closeout check reports backlog primary doc mismatch", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("features/FEAT-001-example-feature.md", "features/feature-template.md"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  assert.equal(
+    JSON.parse(report.stdout).issues.some((issue) => issue.code === "FEAT_BACKLOG_DOC_MISMATCH"),
     true,
   );
 });

@@ -42,6 +42,7 @@ npm test
 ```bash
 agentic-doc-governance init <target-dir> [--force]
 agentic-doc-governance init <target-dir> [--dry-run]
+agentic-doc-governance feature add FEAT-xxx <name> [--root <dir>] [--status IDEA] [--risk T2] [--priority P2] [--summary <text>] [--dry-run]
 agentic-doc-governance docs-check [--root <dir>] [--check-generated] [--json]
 agentic-doc-governance skills-check [--root <dir>] [--json]
 agentic-doc-governance closeout-check --feature FEAT-xxx [--root <dir>] [--json]
@@ -49,6 +50,8 @@ agentic-doc-governance --version
 ```
 
 `init` preflights every file it would write. Without `--force`, it refuses to overwrite existing files before copying anything.
+
+`feature add` creates one feature owner doc and appends one backlog row using the configured `closeout.featureRoot` and `closeout.backlogPath`. It refuses duplicate feature IDs.
 
 ## Intended Repo Shape
 
@@ -121,3 +124,5 @@ npm pack --dry-run
 ```
 
 `npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, and the example product closeout check. CI runs the same command on every pull request.
+
+Before publishing, update `CHANGELOG.md` and follow `RELEASE.md`.

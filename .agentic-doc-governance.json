@@ -15,7 +15,9 @@
     "requiredPaths": [
       ".agentic-doc-governance.json",
       "AGENTS.template.md",
+      "CHANGELOG.md",
       "README.md",
+      "RELEASE.md",
       "package.json",
       ".github/workflows/ci.yml",
       "bin/agentic-doc-governance.mjs",
@@ -23,6 +25,7 @@
       "scripts/docs-integrity-check.mjs",
       "scripts/skills-integrity-check.mjs",
       "scripts/agent-closeout-check.mjs",
+      "scripts/lib/args.mjs",
       "scripts/lib/config.mjs",
       "scripts/lib/feature-lifecycle.mjs",
       "templates/.agentic-doc-governance.json",
