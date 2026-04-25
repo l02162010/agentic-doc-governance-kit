@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes("--json");
@@ -128,7 +129,7 @@ function backlogStatus(featureId) {
   if (!exists("docs/canonical/active-backlog.md")) return null;
   for (const line of readText("docs/canonical/active-backlog.md").split(/\r?\n/)) {
     if (!line.startsWith(`| \`${featureId}\``)) continue;
-    return line.split("|").slice(1, -1).map((cell) => cell.trim())[2]?.replace(/`/g, "") ?? null;
+    return normalizeFeatureStatus(line.split("|").slice(1, -1).map((cell) => cell.trim())[2]);
   }
   return null;
 }
@@ -141,11 +142,19 @@ function findFeatureDoc(featureId) {
 function evaluate(featureId, featurePath, text, rowStatus) {
   const issues = [];
   const metadata = parseMetadata(text);
-  const status = metadata.Status?.replace(/`/g, "");
+  const status = normalizeFeatureStatus(metadata.Status);
   const riskTier = metadata["Risk tier"]?.replace(/`/g, "");
   const formalTier = riskTier === "T1" || riskTier === "T2";
   const closeout = manifest(text);
 
+  if (!rowStatus) {
+    addIssue(issues, "BACKLOG_ROW_MISSING", "error", "docs/canonical/active-backlog.md", { featureId }, "Add a backlog row for this feature before closeout.", "Do not close out a feature that is not traceable from the active backlog.");
+  } else if (!isValidFeatureStatus(rowStatus)) {
+    addIssue(issues, "BACKLOG_STATUS_INVALID", "error", "docs/canonical/active-backlog.md", { featureId, status: rowStatus, allowedStatuses: validFeatureStatusList() }, "Use one of the allowed feature lifecycle statuses in the backlog row.", "Do not invent a new lifecycle status.");
+  }
+  if (!isValidFeatureStatus(status)) {
+    addIssue(issues, "FEATURE_STATUS_INVALID", "error", featurePath, { featureId, status, allowedStatuses: validFeatureStatusList() }, "Use one of the allowed feature lifecycle statuses in feature metadata.", "Do not invent a new lifecycle status.");
+  }
   if (rowStatus && status !== rowStatus) {
     addIssue(issues, "FEATURE_STATUS_MISMATCH", "error", featurePath, { featureId, featureStatus: status, backlogStatus: rowStatus }, "Align feature and backlog status.", "Do not leave status drift in prose.");
   }
@@ -179,8 +188,8 @@ function evaluate(featureId, featurePath, text, rowStatus) {
   return issues;
 }
 
-function runSelfTest() {
-  const fixture = `> Status: \`SHIPPED\`
+function shippedFixture({ status = "SHIPPED", uncheckedCriterion = "- [ ] Deferred item", acceptanceWaivers = "Deferred item waived in fixture" } = {}) {
+  return `> Status: \`${status}\`
 > Owner: \`engineering\`
 > Source of truth for: self-test
 > Risk tier: \`T2\`
@@ -195,7 +204,7 @@ function runSelfTest() {
 ## Acceptance Criteria
 
 - [x] Done
-- [ ] Deferred item
+${uncheckedCriterion}
 
 ## Closeout Manifest
 
@@ -206,11 +215,76 @@ function runSelfTest() {
 - **Runbook outcome**: none
 - **Release outcome**: none
 - **Semantic review**: not required
-- **Acceptance waivers**: Deferred item waived in fixture
+- **Acceptance waivers**: ${acceptanceWaivers}
 - **Residual risks**: none
 `;
-  const issues = evaluate("FEAT-999", "fixture.md", fixture, "SHIPPED");
-  return { ok: issues.every((item) => item.severity !== "error"), issues };
+}
+
+function runSelfTest() {
+  const cases = [
+    {
+      name: "valid shipped T2 with manifest waiver passes",
+      expectedErrors: 0,
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture(), "SHIPPED"),
+    },
+    {
+      name: "missing backlog row fails",
+      expectedErrors: 1,
+      expectedCodes: ["BACKLOG_ROW_MISSING"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture(), null),
+    },
+    {
+      name: "invalid feature status fails",
+      expectedErrors: 2,
+      expectedCodes: ["FEATURE_STATUS_INVALID", "FEATURE_STATUS_MISMATCH"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture({ status: "DONE" }), "SHIPPED"),
+    },
+    {
+      name: "invalid backlog status fails",
+      expectedErrors: 2,
+      expectedCodes: ["BACKLOG_STATUS_INVALID", "FEATURE_STATUS_MISMATCH"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture(), "DONE"),
+    },
+    {
+      name: "status mismatch fails",
+      expectedErrors: 1,
+      expectedCodes: ["FEATURE_STATUS_MISMATCH"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture({ status: "VERIFYING" }), "SHIPPED"),
+    },
+    {
+      name: "unchecked acceptance without waiver fails",
+      expectedErrors: 1,
+      expectedCodes: ["SHIPPED_ACCEPTANCE_INCOMPLETE"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture({ acceptanceWaivers: "none" }), "SHIPPED"),
+    },
+    {
+      name: "inline acceptance waiver passes",
+      expectedErrors: 0,
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture({
+        uncheckedCriterion: "- [ ] Deferred item [waived: synthetic fixture]",
+        acceptanceWaivers: "none",
+      }), "SHIPPED"),
+    },
+  ];
+
+  const results = cases.map((testCase) => {
+    const errorCodes = testCase.issues.filter((item) => item.severity === "error").map((item) => item.code);
+    const expectedCodes = testCase.expectedCodes ?? [];
+    const expectedMatched = expectedCodes.every((code) => errorCodes.includes(code));
+    return {
+      name: testCase.name,
+      expectedErrors: testCase.expectedErrors,
+      actualErrors: errorCodes.length,
+      expectedCodes,
+      actualCodes: errorCodes,
+      ok: errorCodes.length === testCase.expectedErrors && expectedMatched,
+    };
+  });
+
+  return {
+    ok: results.every((result) => result.ok),
+    cases: results,
+  };
 }
 
 if (selfTest) {

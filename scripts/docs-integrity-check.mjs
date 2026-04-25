@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes("--json");
@@ -94,7 +95,7 @@ function parseBacklogRows() {
     const id = cells[0].replace(/`/g, "");
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
     rows.set(id, {
-      status: cells[2].replace(/`/g, ""),
+      status: normalizeFeatureStatus(cells[2]),
       docPath: link ? normalizeLink("docs/canonical/active-backlog.md", link) : null,
     });
   }
@@ -130,10 +131,33 @@ if (exists("docs/canonical/features") && exists("docs/canonical/active-backlog.m
     if (!id) continue;
     const metadata = parseMetadata(readText(featureDoc));
     const row = backlogRows.get(id);
+    const featureStatus = normalizeFeatureStatus(metadata.Status);
+    if (!isValidFeatureStatus(featureStatus)) {
+      issues.push(issue(
+        "FEAT_STATUS_INVALID",
+        "error",
+        featureDoc,
+        { id, status: featureStatus, allowedStatuses: validFeatureStatusList() },
+        "Use one of the allowed feature lifecycle statuses in the feature doc metadata.",
+        "Do not invent a new lifecycle status.",
+      ));
+    }
     if (!row) {
       issues.push(issue("FEAT_BACKLOG_LINK_MISSING", "error", featureDoc, { id }, "Add a backlog row for this feature.", "Do not create a second feature owner doc."));
-    } else if (metadata.Status?.replace(/`/g, "") !== row.status) {
-      issues.push(issue("FEAT_STATUS_MISMATCH", "error", featureDoc, { id, featureStatus: metadata.Status, backlogStatus: row.status }, "Align feature doc and backlog statuses.", "Do not explain status drift only in prose."));
+    } else {
+      if (!isValidFeatureStatus(row.status)) {
+        issues.push(issue(
+          "BACKLOG_STATUS_INVALID",
+          "error",
+          "docs/canonical/active-backlog.md",
+          { id, status: row.status, allowedStatuses: validFeatureStatusList() },
+          "Use one of the allowed feature lifecycle statuses in the backlog row.",
+          "Do not invent a new lifecycle status.",
+        ));
+      }
+      if (featureStatus !== row.status) {
+        issues.push(issue("FEAT_STATUS_MISMATCH", "error", featureDoc, { id, featureStatus, backlogStatus: row.status }, "Align feature doc and backlog statuses.", "Do not explain status drift only in prose."));
+      }
     }
   }
 }

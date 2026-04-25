@@ -18,3 +18,14 @@ node scripts/agent-closeout-check.mjs --self-test
 - `warning`: should be reviewed, may be accepted with reason
 
 Every issue should identify owner doc, observed value, recommended fix, forbidden fix, and confidence.
+
+## Core Issue Codes
+
+| Code | Severity | Meaning | Typical repair |
+|---|---|---|---|
+| `FEAT_BACKLOG_LINK_MISSING` | `error` | feature owner doc is not indexed by `active-backlog.md` | Add one backlog row pointing to the owner doc. |
+| `BACKLOG_ROW_MISSING` | `error` | closeout was requested for a feature missing from `active-backlog.md` | Add the backlog row before closeout. |
+| `FEAT_STATUS_INVALID` | `error` | feature doc uses a lifecycle status outside `IDEA`, `PLANNED`, `IN_PROGRESS`, `VERIFYING`, `SHIPPED`, `ARCHIVED` | Replace the invalid status with an allowed lifecycle status. |
+| `BACKLOG_STATUS_INVALID` | `error` | backlog row uses a lifecycle status outside the allowed vocabulary | Replace the invalid backlog status. |
+| `FEAT_STATUS_MISMATCH` | `error` | feature doc and backlog status disagree | Align the stale status. |
+| `SHIPPED_ACCEPTANCE_INCOMPLETE` | `error` | shipped feature has unchecked acceptance criteria without an accepted waiver | Complete, unship, add `[waived: reason]`, or list the exact criterion text / ID under `Acceptance waivers`. |
