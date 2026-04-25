@@ -1,0 +1,26 @@
+{
+  "name": "agentic-doc-governance-kit",
+  "version": "0.1.0",
+  "description": "A template and checker toolkit for AI-agent-readable documentation governance and autonomous feature delivery.",
+  "type": "module",
+  "bin": {
+    "agentic-doc-governance": "bin/agentic-doc-governance.mjs"
+  },
+  "scripts": {
+    "docs-check": "node scripts/docs-integrity-check.mjs --check-generated",
+    "skills-check": "node scripts/skills-integrity-check.mjs",
+    "closeout-check": "node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001",
+    "test": "node scripts/docs-integrity-check.mjs --check-generated && node scripts/skills-integrity-check.mjs && node scripts/agent-closeout-check.mjs --self-test && node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001"
+  },
+  "keywords": [
+    "ai-agent",
+    "documentation-governance",
+    "agentic-workflow",
+    "feature-lifecycle",
+    "repo-template"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
