@@ -80,11 +80,25 @@ function issue(code, severity, ownerDoc, observed, recommendedFix, forbiddenFix)
   };
 }
 
+function linkIssueCode(error) {
+  return error.code === "INTERNAL_LINK_OUTSIDE_ROOT" ? error.code : "MALFORMED_INTERNAL_LINK";
+}
+
+function outsideRootError(rawTarget) {
+  const error = new Error(`Local link target escapes configured root: ${rawTarget}`);
+  error.code = "INTERNAL_LINK_OUTSIDE_ROOT";
+  return error;
+}
+
 function normalizeLink(ownerDoc, rawTarget) {
-  let target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
-  if (!target || /^(https?:|mailto:|tel:|app:\/\/)/.test(target)) return null;
-  if (target.startsWith("/")) target = target.slice(1);
-  return path.normalize(path.join(path.dirname(ownerDoc), decodeURIComponent(target))).split(path.sep).join("/");
+  const target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
+  if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
+  const decoded = decodeURIComponent(target).replace(/\\/g, "/");
+  const base = path.posix.dirname(ownerDoc.replace(/\\/g, "/"));
+  const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
+  const normalized = path.posix.normalize(candidate);
+  if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
+  return normalized;
 }
 
 function extractLinks(text) {
@@ -123,7 +137,7 @@ function parseBacklogRows() {
       } catch (error) {
         linkError = error.message;
         issues.push(issue(
-          "MALFORMED_INTERNAL_LINK",
+          linkIssueCode(error),
           "error",
           backlogPath,
           { target: link, error: error.message },
@@ -167,7 +181,7 @@ for (const doc of docs) {
       target = normalizeLink(doc, rawLink);
     } catch (error) {
       issues.push(issue(
-        "MALFORMED_INTERNAL_LINK",
+        linkIssueCode(error),
         "error",
         doc,
         { target: rawLink, error: error.message },

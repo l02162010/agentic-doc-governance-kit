@@ -147,11 +147,25 @@ function hasWaiver(criterion, manifestValues) {
   return Boolean((id && normalizedWaiver.includes(id.toLowerCase())) || (text && normalizedWaiver.includes(text.toLowerCase())));
 }
 
+function linkIssueCode(error) {
+  return error.code === "INTERNAL_LINK_OUTSIDE_ROOT" ? error.code : "MALFORMED_INTERNAL_LINK";
+}
+
+function outsideRootError(rawTarget) {
+  const error = new Error(`Local link target escapes configured root: ${rawTarget}`);
+  error.code = "INTERNAL_LINK_OUTSIDE_ROOT";
+  return error;
+}
+
 function normalizeLink(ownerDoc, rawTarget) {
-  let target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
-  if (!target || /^(https?:|mailto:|tel:|app:\/\/)/.test(target)) return null;
-  if (target.startsWith("/")) target = target.slice(1);
-  return path.normalize(path.join(path.dirname(ownerDoc), decodeURIComponent(target))).split(path.sep).join("/");
+  const target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
+  if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
+  const decoded = decodeURIComponent(target).replace(/\\/g, "/");
+  const base = path.posix.dirname(ownerDoc.replace(/\\/g, "/"));
+  const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
+  const normalized = path.posix.normalize(candidate);
+  if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
+  return normalized;
 }
 
 function backlogRow(featureId) {
@@ -162,17 +176,20 @@ function backlogRow(featureId) {
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
     let docPath = null;
     let linkError = null;
+    let linkErrorCode = null;
     if (link) {
       try {
         docPath = normalizeLink(closeoutConfig.backlogPath, link);
       } catch (error) {
         linkError = error.message;
+        linkErrorCode = linkIssueCode(error);
       }
     }
     return {
       status: normalizeFeatureStatus(cells[2]),
       docPath,
       linkError,
+      linkErrorCode,
     };
   }
   return null;
@@ -227,6 +244,8 @@ function evaluate(featureId, featurePath, text, rowStatus) {
       for (const field of closeoutConfig.requiredManifestFields) {
         if (!closeout.fields.has(field)) {
           addIssue(issues, "CLOSEOUT_FIELD_MISSING", "error", featurePath, { featureId, field }, "Fill the missing closeout field.", "Do not omit side-effect decisions.");
+        } else if (!hasValue(closeout.values.get(field))) {
+          addIssue(issues, "CLOSEOUT_FIELD_EMPTY", "error", featurePath, { featureId, field }, "Fill the closeout field with a concrete value or explicit none/not required decision.", "Do not leave shipped closeout decisions blank or TBD.");
         }
       }
     }
@@ -234,7 +253,13 @@ function evaluate(featureId, featurePath, text, rowStatus) {
   return issues;
 }
 
-function shippedFixture({ status = "SHIPPED", uncheckedCriterion = "- [ ] Deferred item", acceptanceWaivers = "Deferred item waived in fixture" } = {}) {
+function shippedFixture({
+  status = "SHIPPED",
+  uncheckedCriterion = "- [ ] Deferred item",
+  acceptanceWaivers = "Deferred item waived in fixture",
+  runtimeContract = "none",
+  verification = "self-test",
+} = {}) {
   return `> Status: \`${status}\`
 > Owner: \`engineering\`
 > Source of truth for: self-test
@@ -254,8 +279,8 @@ ${uncheckedCriterion}
 
 ## Closeout Manifest
 
-- **Runtime contract**: none
-- **Verification**: self-test
+- **Runtime contract**: ${runtimeContract}
+- **Verification**: ${verification}
 - **Legal outcome**: none
 - **AI outcome**: none
 - **Runbook outcome**: none
@@ -304,6 +329,12 @@ function runSelfTest() {
       issues: evaluate("FEAT-999", "fixture.md", shippedFixture({ acceptanceWaivers: "none" }), "SHIPPED"),
     },
     {
+      name: "empty shipped manifest values fail",
+      expectedErrors: 2,
+      expectedCodes: ["CLOSEOUT_FIELD_EMPTY"],
+      issues: evaluate("FEAT-999", "fixture.md", shippedFixture({ runtimeContract: "", verification: "TBD" }), "SHIPPED"),
+    },
+    {
       name: "inline acceptance waiver passes",
       expectedErrors: 0,
       issues: evaluate("FEAT-999", "fixture.md", shippedFixture({
@@ -349,7 +380,7 @@ const featureDocs = findFeatureDocs(featureArg);
 const row = backlogRow(featureArg);
 const backlogParseIssue = row?.linkError
   ? {
-      code: "MALFORMED_INTERNAL_LINK",
+      code: row.linkErrorCode ?? "MALFORMED_INTERNAL_LINK",
       severity: "error",
       ownerDoc: closeoutConfig.backlogPath,
       relatedDocs: [],

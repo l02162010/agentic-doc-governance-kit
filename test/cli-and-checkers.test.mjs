@@ -307,6 +307,29 @@ test("docs check reports malformed backlog links instead of crashing", () => {
   );
 });
 
+test("docs check rejects local links that escape the configured root", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+  fs.writeFileSync(path.join(target, "docs", "README.md"), "[escape](../../outside.md)\n");
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
+    true,
+  );
+});
+
 test("docs check uses configured feature root and backlog path", () => {
   const target = tempDir();
   fs.mkdirSync(path.join(target, "governance", "features"), { recursive: true });
@@ -353,6 +376,80 @@ test("docs check uses configured feature root and backlog path", () => {
   assert.notEqual(result.status, 0);
   assert.equal(
     JSON.parse(result.stdout).issues.some((issue) => issue.code === "FEAT_STATUS_MISMATCH"),
+    true,
+  );
+});
+
+test("closeout check rejects shipped manifest fields left empty", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featurePath = path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md");
+  let text = fs.readFileSync(featurePath, "utf8");
+  text = text
+    .replace("> Status: `PLANNED`", "> Status: `SHIPPED`")
+    .replace("- [ ] Replace this template with real acceptance criteria.", "- [x] Replace this template with real acceptance criteria.")
+    .replace(
+      "## Linked Artifacts",
+      [
+        "## Closeout Manifest",
+        "",
+        "- **Runtime contract**: ",
+        "- **Verification**: TBD",
+        "- **Legal outcome**: none",
+        "- **AI outcome**: none",
+        "- **Runbook outcome**: none",
+        "- **Release outcome**: none",
+        "- **Semantic review**: reviewed",
+        "- **Acceptance waivers**: none",
+        "- **Residual risks**: none",
+        "",
+        "## Linked Artifacts",
+      ].join("\n"),
+    );
+  fs.writeFileSync(featurePath, text);
+
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("| `PLANNED` |", "| `SHIPPED` |"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  const issues = JSON.parse(report.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "CLOSEOUT_FIELD_EMPTY" && issue.observed.field === "runtime contract"), true);
+  assert.equal(issues.some((issue) => issue.code === "CLOSEOUT_FIELD_EMPTY" && issue.observed.field === "verification"), true);
+});
+
+test("closeout check rejects backlog primary doc links that escape the configured root", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("features/FEAT-001-example-feature.md", "../../../outside.md"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  assert.equal(
+    JSON.parse(report.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
     true,
   );
 });
