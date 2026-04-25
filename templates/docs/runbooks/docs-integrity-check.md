@@ -23,6 +23,9 @@ Every issue should identify owner doc, observed value, recommended fix, forbidde
 
 | Code | Severity | Meaning | Typical repair |
 |---|---|---|---|
+| `GENERATED_PATH_MISSING` | `error` | `--check-generated` expected a managed governance file that is missing | Restore the file, re-run `agentic-doc-governance init --force` intentionally, or update `.agentic-doc-governance.json` if the footprint changed. |
+| `BROKEN_INTERNAL_LINK` | `error` | markdown points to a missing repo-local path | Fix the link or restore the target file. |
+| `MALFORMED_INTERNAL_LINK` | `error` | markdown contains an invalid repo-local link target | Use a valid path or percent-encode special characters correctly. |
 | `FEAT_BACKLOG_LINK_MISSING` | `error` | feature owner doc is not indexed by `active-backlog.md` | Add one backlog row pointing to the owner doc. |
 | `BACKLOG_ROW_MISSING` | `error` | closeout was requested for a feature missing from `active-backlog.md` | Add the backlog row before closeout. |
 | `FEAT_STATUS_INVALID` | `error` | feature doc uses a lifecycle status outside `IDEA`, `PLANNED`, `IN_PROGRESS`, `VERIFYING`, `SHIPPED`, `ARCHIVED` | Replace the invalid status with an allowed lifecycle status. |

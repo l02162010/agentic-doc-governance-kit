@@ -1,0 +1,51 @@
+{
+  "docs": {
+    "roots": [
+      "templates/docs",
+      "examples/basic-product/docs"
+    ]
+  },
+  "skills": {
+    "roots": [
+      "templates/.codex/skills",
+      "examples/basic-product/.codex/skills"
+    ]
+  },
+  "generated": {
+    "requiredPaths": [
+      ".agentic-doc-governance.json",
+      "AGENTS.template.md",
+      "README.md",
+      "package.json",
+      ".github/workflows/ci.yml",
+      "bin/agentic-doc-governance.mjs",
+      "test/cli-and-checkers.test.mjs",
+      "scripts/docs-integrity-check.mjs",
+      "scripts/skills-integrity-check.mjs",
+      "scripts/agent-closeout-check.mjs",
+      "scripts/lib/config.mjs",
+      "scripts/lib/feature-lifecycle.mjs",
+      "templates/.agentic-doc-governance.json",
+      "templates/docs/README.md",
+      "templates/docs/canonical/active-backlog.md",
+      "templates/docs/canonical/agent-execution-contract.md",
+      "templates/docs/canonical/documentation-governance.md",
+      "templates/docs/canonical/feature-lifecycle-governance.md",
+      "templates/docs/canonical/product-runtime-spec.md",
+      "templates/docs/canonical/features/FEAT-001-example-feature.md",
+      "templates/docs/canonical/features/feature-template.md",
+      "templates/docs/runbooks/docs-integrity-check.md",
+      "templates/.codex/skills/README.md",
+      "templates/.codex/skills/feature-lifecycle/SKILL.md",
+      "templates/.codex/skills/feature-readiness/SKILL.md",
+      "templates/.codex/skills/implementation-surface/SKILL.md",
+      "examples/basic-product/AGENTS.md",
+      "examples/basic-product/docs/README.md",
+      "examples/basic-product/docs/canonical/active-backlog.md",
+      "examples/basic-product/docs/canonical/agent-execution-contract.md",
+      "examples/basic-product/docs/canonical/features/FEAT-001-example-onboarding-checklist.md",
+      "examples/basic-product/.codex/skills/README.md",
+      "examples/basic-product/.codex/skills/feature-lifecycle/SKILL.md"
+    ]
+  }
+}

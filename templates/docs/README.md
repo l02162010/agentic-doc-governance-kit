@@ -29,3 +29,5 @@ node scripts/docs-integrity-check.mjs --check-generated
 node scripts/skills-integrity-check.mjs
 node scripts/agent-closeout-check.mjs --feature FEAT-001
 ```
+
+The generated `.agentic-doc-governance.json` defines the docs roots, skill roots, and required generated files for this project.

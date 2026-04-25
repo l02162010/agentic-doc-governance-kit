@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 
 const args = process.argv.slice(2);
@@ -11,6 +12,8 @@ const help = args.includes("--help") || args.includes("-h");
 const selfTest = args.includes("--self-test");
 const root = path.resolve(valueFor("--root") ?? process.cwd());
 const featureArg = valueFor("--feature");
+const config = loadGovernanceConfig(root);
+const closeoutConfig = config.closeout;
 
 if (help) {
   console.log(`Usage: node scripts/agent-closeout-check.mjs --feature FEAT-xxx [--root <dir>] [--self-test] [--json]`);
@@ -126,8 +129,8 @@ function hasWaiver(criterion, manifestValues) {
 }
 
 function backlogStatus(featureId) {
-  if (!exists("docs/canonical/active-backlog.md")) return null;
-  for (const line of readText("docs/canonical/active-backlog.md").split(/\r?\n/)) {
+  if (!exists(closeoutConfig.backlogPath)) return null;
+  for (const line of readText(closeoutConfig.backlogPath).split(/\r?\n/)) {
     if (!line.startsWith(`| \`${featureId}\``)) continue;
     return normalizeFeatureStatus(line.split("|").slice(1, -1).map((cell) => cell.trim())[2]);
   }
@@ -135,7 +138,7 @@ function backlogStatus(featureId) {
 }
 
 function findFeatureDoc(featureId) {
-  const candidates = walk("docs/canonical/features", (file) => path.basename(file).startsWith(featureId) && file.endsWith(".md"));
+  const candidates = walk(closeoutConfig.featureRoot, (file) => path.basename(file).startsWith(featureId) && file.endsWith(".md"));
   return candidates[0] ?? null;
 }
 
@@ -144,13 +147,13 @@ function evaluate(featureId, featurePath, text, rowStatus) {
   const metadata = parseMetadata(text);
   const status = normalizeFeatureStatus(metadata.Status);
   const riskTier = metadata["Risk tier"]?.replace(/`/g, "");
-  const formalTier = riskTier === "T1" || riskTier === "T2";
+  const formalTier = closeoutConfig.formalRiskTiers.includes(riskTier);
   const closeout = manifest(text);
 
   if (!rowStatus) {
-    addIssue(issues, "BACKLOG_ROW_MISSING", "error", "docs/canonical/active-backlog.md", { featureId }, "Add a backlog row for this feature before closeout.", "Do not close out a feature that is not traceable from the active backlog.");
+    addIssue(issues, "BACKLOG_ROW_MISSING", "error", closeoutConfig.backlogPath, { featureId }, "Add a backlog row for this feature before closeout.", "Do not close out a feature that is not traceable from the active backlog.");
   } else if (!isValidFeatureStatus(rowStatus)) {
-    addIssue(issues, "BACKLOG_STATUS_INVALID", "error", "docs/canonical/active-backlog.md", { featureId, status: rowStatus, allowedStatuses: validFeatureStatusList() }, "Use one of the allowed feature lifecycle statuses in the backlog row.", "Do not invent a new lifecycle status.");
+    addIssue(issues, "BACKLOG_STATUS_INVALID", "error", closeoutConfig.backlogPath, { featureId, status: rowStatus, allowedStatuses: validFeatureStatusList() }, "Use one of the allowed feature lifecycle statuses in the backlog row.", "Do not invent a new lifecycle status.");
   }
   if (!isValidFeatureStatus(status)) {
     addIssue(issues, "FEATURE_STATUS_INVALID", "error", featurePath, { featureId, status, allowedStatuses: validFeatureStatusList() }, "Use one of the allowed feature lifecycle statuses in feature metadata.", "Do not invent a new lifecycle status.");
@@ -158,11 +161,11 @@ function evaluate(featureId, featurePath, text, rowStatus) {
   if (rowStatus && status !== rowStatus) {
     addIssue(issues, "FEATURE_STATUS_MISMATCH", "error", featurePath, { featureId, featureStatus: status, backlogStatus: rowStatus }, "Align feature and backlog status.", "Do not leave status drift in prose.");
   }
-  if (!["T1", "T2", "T3"].includes(riskTier)) {
+  if (!closeoutConfig.validRiskTiers.includes(riskTier)) {
     addIssue(issues, "RISK_TIER_INVALID", "error", featurePath, { featureId, riskTier }, "Set Risk tier to T1, T2, or T3.", "Do not leave risk implicit.");
   }
   if (formalTier) {
-    for (const field of ["Status", "Owner", "Source of truth for", "Risk tier", "Primary skill", "Required gates", "Verification", "Closeout evidence", "Indexed by"]) {
+    for (const field of closeoutConfig.requiredMetadataFields) {
       if (!hasValue(metadata[field])) {
         addIssue(issues, "CLOSEOUT_METADATA_MISSING", "error", featurePath, { featureId, field }, "Fill the metadata field.", "Do not bury the value only in prose.");
       }
@@ -178,7 +181,7 @@ function evaluate(featureId, featurePath, text, rowStatus) {
     if (!closeout.section) {
       addIssue(issues, "CLOSEOUT_MANIFEST_MISSING", "error", featurePath, { featureId }, "Add Closeout Manifest.", "Do not use status notes as a substitute.");
     } else {
-      for (const field of ["runtime contract", "verification", "legal outcome", "ai outcome", "runbook outcome", "release outcome", "semantic review", "acceptance waivers", "residual risks"]) {
+      for (const field of closeoutConfig.requiredManifestFields) {
         if (!closeout.fields.has(field)) {
           addIssue(issues, "CLOSEOUT_FIELD_MISSING", "error", featurePath, { featureId, field }, "Fill the missing closeout field.", "Do not omit side-effect decisions.");
         }
@@ -305,7 +308,7 @@ const issues = featurePath
   : [{
       code: "FEATURE_NOT_FOUND",
       severity: "error",
-      ownerDoc: "docs/canonical/features",
+      ownerDoc: closeoutConfig.featureRoot,
       relatedDocs: [],
       observed: { featureId: featureArg },
       rationale: "Feature owner doc is required.",

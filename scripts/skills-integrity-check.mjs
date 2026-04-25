@@ -3,11 +3,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { loadGovernanceConfig } from "./lib/config.mjs";
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes("--json");
 const help = args.includes("--help") || args.includes("-h");
 const root = path.resolve(valueFor("--root") ?? process.cwd());
+const config = loadGovernanceConfig(root);
 
 if (help) {
   console.log(`Usage: node scripts/skills-integrity-check.mjs [--root <dir>] [--json]`);
@@ -48,7 +50,7 @@ function addIssue(issues, code, severity, ownerDoc, observed, recommendedFix, fo
 }
 
 function discoverSkillRoots() {
-  return [".codex/skills", "templates/.codex/skills", "examples/basic-product/.codex/skills"].filter(exists);
+  return config.skills.roots.filter(exists);
 }
 
 function installedSkills(skillRoot) {

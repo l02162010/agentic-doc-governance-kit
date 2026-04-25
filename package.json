@@ -6,11 +6,23 @@
   "bin": {
     "agentic-doc-governance": "bin/agentic-doc-governance.mjs"
   },
+  "files": [
+    ".agentic-doc-governance.json",
+    "AGENTS.template.md",
+    "LICENSE",
+    "README.md",
+    "bin",
+    "examples",
+    "scripts",
+    "templates"
+  ],
   "scripts": {
     "docs-check": "node scripts/docs-integrity-check.mjs --check-generated",
     "skills-check": "node scripts/skills-integrity-check.mjs",
     "closeout-check": "node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001",
-    "test": "node scripts/docs-integrity-check.mjs --check-generated && node scripts/skills-integrity-check.mjs && node scripts/agent-closeout-check.mjs --self-test && node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001"
+    "check": "node scripts/docs-integrity-check.mjs --check-generated && node scripts/skills-integrity-check.mjs && node scripts/agent-closeout-check.mjs --self-test && node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001",
+    "test": "node --test && npm run check",
+    "prepack": "npm test"
   },
   "keywords": [
     "ai-agent",

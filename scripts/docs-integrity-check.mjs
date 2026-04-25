@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 
 const args = process.argv.slice(2);
@@ -10,6 +11,7 @@ const jsonMode = args.includes("--json");
 const help = args.includes("--help") || args.includes("-h");
 const checkGenerated = args.includes("--check-generated");
 const root = path.resolve(valueFor("--root") ?? process.cwd());
+const config = loadGovernanceConfig(root);
 
 if (help) {
   console.log(`Usage: node scripts/docs-integrity-check.mjs [--root <dir>] [--check-generated] [--json]`);
@@ -86,29 +88,73 @@ function featureIdFromPath(file) {
 }
 
 function parseBacklogRows() {
-  if (!exists("docs/canonical/active-backlog.md")) return new Map();
+  const backlogPath = config.closeout.backlogPath;
+  if (!exists(backlogPath)) return new Map();
   const rows = new Map();
-  for (const line of readText("docs/canonical/active-backlog.md").split(/\r?\n/)) {
+  for (const line of readText(backlogPath).split(/\r?\n/)) {
     if (!line.startsWith("| `FEAT-")) continue;
     const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
     if (cells.length < 6) continue;
     const id = cells[0].replace(/`/g, "");
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
+    let docPath = null;
+    if (link) {
+      try {
+        docPath = normalizeLink(backlogPath, link);
+      } catch (error) {
+        issues.push(issue(
+          "MALFORMED_INTERNAL_LINK",
+          "error",
+          backlogPath,
+          { target: link, error: error.message },
+          "Use a valid markdown link target or percent-encode the path correctly.",
+          "Do not leave malformed local links that make docs tooling ambiguous.",
+        ));
+      }
+    }
     rows.set(id, {
       status: normalizeFeatureStatus(cells[2]),
-      docPath: link ? normalizeLink("docs/canonical/active-backlog.md", link) : null,
+      docPath,
     });
   }
   return rows;
 }
 
 const issues = [];
-const docRoots = ["docs", "templates/docs", "examples/basic-product/docs"].filter(exists);
+const docRoots = config.docs.roots.filter(exists);
 const docs = docRoots.flatMap((dir) => walk(dir, (file) => file.endsWith(".md")));
+
+if (checkGenerated) {
+  for (const requiredPath of config.generated.requiredPaths) {
+    if (!exists(requiredPath)) {
+      issues.push(issue(
+        "GENERATED_PATH_MISSING",
+        "error",
+        requiredPath,
+        { path: requiredPath },
+        "Restore the missing generated governance file or update .agentic-doc-governance.json if the project intentionally owns a different footprint.",
+        "Do not pass --check-generated while silently omitting generated governance files.",
+      ));
+    }
+  }
+}
 
 for (const doc of docs) {
   for (const rawLink of extractLinks(readText(doc))) {
-    const target = normalizeLink(doc, rawLink);
+    let target;
+    try {
+      target = normalizeLink(doc, rawLink);
+    } catch (error) {
+      issues.push(issue(
+        "MALFORMED_INTERNAL_LINK",
+        "error",
+        doc,
+        { target: rawLink, error: error.message },
+        "Use a valid markdown link target or percent-encode the path correctly.",
+        "Do not leave malformed local links that make docs tooling ambiguous.",
+      ));
+      continue;
+    }
     if (!target) continue;
     if (!exists(target)) {
       issues.push(issue(
@@ -123,9 +169,12 @@ for (const doc of docs) {
   }
 }
 
-if (exists("docs/canonical/features") && exists("docs/canonical/active-backlog.md")) {
+const featureRoot = config.closeout.featureRoot;
+const backlogPath = config.closeout.backlogPath;
+
+if (exists(featureRoot) && exists(backlogPath)) {
   const backlogRows = parseBacklogRows();
-  const featureDocs = walk("docs/canonical/features", (file) => /^FEAT-\d+.*\.md$/.test(path.basename(file)));
+  const featureDocs = walk(featureRoot, (file) => /^FEAT-\d+.*\.md$/.test(path.basename(file)));
   for (const featureDoc of featureDocs) {
     const id = featureIdFromPath(featureDoc);
     if (!id) continue;
@@ -149,7 +198,7 @@ if (exists("docs/canonical/features") && exists("docs/canonical/active-backlog.m
         issues.push(issue(
           "BACKLOG_STATUS_INVALID",
           "error",
-          "docs/canonical/active-backlog.md",
+          backlogPath,
           { id, status: row.status, allowedStatuses: validFeatureStatusList() },
           "Use one of the allowed feature lifecycle statuses in the backlog row.",
           "Do not invent a new lifecycle status.",

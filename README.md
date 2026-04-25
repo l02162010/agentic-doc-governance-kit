@@ -15,10 +15,12 @@ The goal is simple: a user should be able to describe a desired product feature 
 
 ## Quick Start
 
-From this repo:
+From this repo or an installed package:
 
 ```bash
 node bin/agentic-doc-governance.mjs init /path/to/your-project
+# or, after publishing:
+npx agentic-doc-governance init /path/to/your-project
 ```
 
 Then in the target project:
@@ -35,10 +37,24 @@ Or run this toolkit's own checks:
 npm test
 ```
 
+## CLI
+
+```bash
+agentic-doc-governance init <target-dir> [--force]
+agentic-doc-governance init <target-dir> [--dry-run]
+agentic-doc-governance docs-check [--root <dir>] [--check-generated] [--json]
+agentic-doc-governance skills-check [--root <dir>] [--json]
+agentic-doc-governance closeout-check --feature FEAT-xxx [--root <dir>] [--json]
+agentic-doc-governance --version
+```
+
+`init` preflights every file it would write. Without `--force`, it refuses to overwrite existing files before copying anything.
+
 ## Intended Repo Shape
 
 ```text
 your-project/
+  .agentic-doc-governance.json
   AGENTS.md
   docs/
     README.md
@@ -63,6 +79,17 @@ your-project/
     agent-closeout-check.mjs
 ```
 
+## Configuration
+
+The generated `.agentic-doc-governance.json` keeps the default zero-config behavior explicit:
+
+- `docs.roots`: markdown roots scanned by docs integrity checks.
+- `skills.roots`: repo-local skill registries scanned by skill integrity checks.
+- `generated.requiredPaths`: files that must exist when `--check-generated` is used.
+- `closeout`: optional paths and required metadata/manifest fields for feature closeout.
+
+Product repos can edit this file when they intentionally adapt the footprint. The default install checks only the generated `docs/`, `.codex/skills/`, and `scripts/` layout.
+
 ## Core Contract
 
 The framework splits work into three risk tiers:
@@ -85,3 +112,12 @@ This repo is the generic core. Each product repo should add its own adapter:
 - checker configuration if the default rules are too broad or too narrow
 
 Do not put project secrets, credentials, private data, or product-specific absolute paths into the generic kit.
+
+## Development
+
+```bash
+npm test
+npm pack --dry-run
+```
+
+`npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, and the example product closeout check. CI runs the same command on every pull request.

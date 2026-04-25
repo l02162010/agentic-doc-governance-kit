@@ -1,0 +1,12 @@
+{
+  "docs": {
+    "roots": [
+      "docs"
+    ]
+  },
+  "skills": {
+    "roots": [
+      ".codex/skills"
+    ]
+  }
+}
