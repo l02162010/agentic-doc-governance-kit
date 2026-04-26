@@ -66,6 +66,19 @@ function walk(dirRel, predicate = () => true) {
   return out.sort();
 }
 
+function installedSkillNames() {
+  const skills = new Set();
+  for (const skillRoot of config.skills.roots) {
+    if (!exists(skillRoot) || !fs.statSync(abs(skillRoot)).isDirectory()) continue;
+    for (const entry of fs.readdirSync(abs(skillRoot), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillFile = `${skillRoot}/${entry.name}/SKILL.md`;
+      if (exists(skillFile)) skills.add(entry.name);
+    }
+  }
+  return skills;
+}
+
 function issue(code, severity, ownerDoc, observed, recommendedFix, forbiddenFix) {
   return {
     code,
@@ -141,8 +154,51 @@ function parseBacklogRows() {
   for (const line of readText(backlogPath).split(/\r?\n/)) {
     if (!line.startsWith("| `FEAT-")) continue;
     const cells = parseMarkdownTableRow(line);
-    if (cells.length < 6) continue;
+    if (cells.length < 6) {
+      issues.push(issue(
+        "BACKLOG_ROW_MALFORMED",
+        "error",
+        backlogPath,
+        { line },
+        "Use the configured backlog columns: ID, Feature, Status, Priority, Summary, Primary doc.",
+        "Do not keep partial feature rows in the active backlog.",
+      ));
+      continue;
+    }
     const id = cells[0].replace(/`/g, "");
+    const status = normalizeFeatureStatus(cells[2]);
+    const priority = cells[3]?.replace(/`/g, "").trim() ?? "";
+    if (rows.has(id)) {
+      issues.push(issue(
+        "BACKLOG_ROW_DUPLICATE",
+        "error",
+        backlogPath,
+        { id },
+        "Keep exactly one active backlog row per feature ID.",
+        "Do not let duplicate backlog rows compete as sources of truth.",
+      ));
+      continue;
+    }
+    if (!isValidFeatureStatus(status)) {
+      issues.push(issue(
+        "BACKLOG_STATUS_INVALID",
+        "error",
+        backlogPath,
+        { id, status, allowedStatuses: validFeatureStatusList() },
+        "Use one of the allowed feature lifecycle statuses in the backlog row.",
+        "Do not invent a new lifecycle status.",
+      ));
+    }
+    if (!config.closeout.validPriorities.includes(priority)) {
+      issues.push(issue(
+        "BACKLOG_PRIORITY_INVALID",
+        "error",
+        backlogPath,
+        { id, priority, allowedPriorities: config.closeout.validPriorities },
+        "Use one of the configured backlog priorities.",
+        "Do not invent priority labels without updating governance config.",
+      ));
+    }
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
     let docPath = null;
     let linkError = null;
@@ -162,7 +218,8 @@ function parseBacklogRows() {
       }
     }
     rows.set(id, {
-      status: normalizeFeatureStatus(cells[2]),
+      status,
+      priority,
       docPath,
       linkError,
     });
@@ -186,6 +243,7 @@ for (const docRoot of config.docs.roots) {
 const docRoots = config.docs.roots.filter(exists);
 const configuredDocRoots = docRoots.map(normalizeRootPath);
 const docs = docRoots.flatMap((dir) => walk(dir, (file) => file.endsWith(".md")));
+const installedSkills = installedSkillNames();
 
 if (checkGenerated) {
   for (const requiredPath of config.generated.requiredPaths) {
@@ -286,6 +344,8 @@ if (featureRootExists && backlogExists) {
     const metadata = parseMetadata(readText(featureDoc));
     const row = backlogRows.get(id);
     const featureStatus = normalizeFeatureStatus(metadata.Status);
+    const riskTier = metadata["Risk tier"]?.replace(/`/g, "").trim() ?? "";
+    const primarySkill = metadata["Primary skill"]?.replace(/`/g, "").trim() ?? "";
     if (!isValidFeatureStatus(featureStatus)) {
       issues.push(issue(
         "FEAT_STATUS_INVALID",
@@ -294,6 +354,35 @@ if (featureRootExists && backlogExists) {
         { id, status: featureStatus, allowedStatuses: validFeatureStatusList() },
         "Use one of the allowed feature lifecycle statuses in the feature doc metadata.",
         "Do not invent a new lifecycle status.",
+      ));
+    }
+    if (!config.closeout.validRiskTiers.includes(riskTier)) {
+      issues.push(issue(
+        "RISK_TIER_INVALID",
+        "error",
+        featureDoc,
+        { id, riskTier, allowedRiskTiers: config.closeout.validRiskTiers },
+        "Use one of the configured risk tiers in feature metadata.",
+        "Do not leave risk implicit or invent new tiers without updating governance config.",
+      ));
+    }
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(primarySkill)) {
+      issues.push(issue(
+        "FEAT_SKILL_INVALID",
+        "error",
+        featureDoc,
+        { id, primarySkill },
+        "Use a repo-local skill name like feature-lifecycle.",
+        "Do not route feature work through malformed skill names.",
+      ));
+    } else if (installedSkills.size > 0 && !installedSkills.has(primarySkill)) {
+      issues.push(issue(
+        "FEAT_SKILL_MISSING",
+        "error",
+        featureDoc,
+        { id, primarySkill },
+        "Add the skill to the repo-local skill registry or update the feature metadata to an installed skill.",
+        "Do not route feature work through unavailable skills.",
       ));
     }
     if (!row) {
@@ -318,20 +407,21 @@ if (featureRootExists && backlogExists) {
           "Do not leave the backlog indexed to a stale or parallel owner doc.",
         ));
       }
-      if (!isValidFeatureStatus(row.status)) {
-        issues.push(issue(
-          "BACKLOG_STATUS_INVALID",
-          "error",
-          backlogPath,
-          { id, status: row.status, allowedStatuses: validFeatureStatusList() },
-          "Use one of the allowed feature lifecycle statuses in the backlog row.",
-          "Do not invent a new lifecycle status.",
-        ));
-      }
       if (featureStatus !== row.status) {
         issues.push(issue("FEAT_STATUS_MISMATCH", "error", featureDoc, { id, featureStatus, backlogStatus: row.status }, "Align feature doc and backlog statuses.", "Do not explain status drift only in prose."));
       }
     }
+  }
+  for (const [id, row] of backlogRows) {
+    if (docsByFeatureId.has(id)) continue;
+    issues.push(issue(
+      "FEAT_OWNER_MISSING",
+      "error",
+      backlogPath,
+      { id, backlogDocPath: row.docPath },
+      "Create the referenced feature owner doc or remove/archive the stale backlog row.",
+      "Do not keep active backlog rows that cannot be traced to a feature owner doc.",
+    ));
   }
 }
 

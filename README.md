@@ -51,7 +51,7 @@ agentic-doc-governance --version
 
 `init` preflights every file it would write. Without `--force`, it refuses to overwrite existing files before copying anything.
 
-`feature add` creates one feature owner doc and appends one backlog row using the configured `closeout.featureRoot` and `closeout.backlogPath`. It refuses duplicate feature IDs.
+`feature add` creates one feature owner doc and appends one backlog row using the configured `closeout.featureRoot` and `closeout.backlogPath`. It refuses duplicate feature IDs, terminal creation statuses (`SHIPPED`, `ARCHIVED`), priorities outside `P0` through `P3`, and unknown repo-local skills when a skill registry is installed.
 
 ## Intended Repo Shape
 
@@ -89,7 +89,7 @@ The generated `.agentic-doc-governance.json` keeps the default zero-config behav
 - `docs.roots`: markdown roots scanned by docs integrity checks.
 - `skills.roots`: repo-local skill registries scanned by skill integrity checks.
 - `generated.requiredPaths`: files that must exist when `--check-generated` is used.
-- `closeout`: optional paths and required metadata/manifest fields for feature closeout.
+- `closeout`: optional paths, allowed risk/priority vocabularies, and required metadata/manifest fields for feature closeout.
 
 Product repos can edit this file when they intentionally adapt the footprint. The default install checks only the generated `docs/`, `.codex/skills/`, and `scripts/` layout.
 
@@ -99,6 +99,7 @@ The checkers intentionally validate a controlled Markdown contract rather than a
 
 - Feature owner docs use top-of-file `>` metadata and `##` sections from the generated templates.
 - The active backlog uses the generated pipe table columns: `ID`, `Feature`, `Status`, `Priority`, `Summary`, and `Primary doc`.
+- Backlog priorities use `P0`, `P1`, `P2`, or `P3` unless `.agentic-doc-governance.json` intentionally defines another vocabulary.
 - Backlog cells may contain escaped pipe characters (`\|`), including values produced by `feature add`.
 - Local Markdown links are checked relative to the configured docs root; links that escape the root are rejected.
 

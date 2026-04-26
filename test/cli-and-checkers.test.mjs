@@ -330,6 +330,53 @@ test("feature add preflights backlog path before creating owner doc", () => {
   );
 });
 
+test("feature add rejects terminal statuses, invalid priorities, and unknown skills", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const shipped = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-777",
+    "Already Shipped",
+    "--root",
+    target,
+    "--status",
+    "SHIPPED",
+  ]);
+  assert.notEqual(shipped.status, 0);
+  assert.match(shipped.stderr, /cannot create a feature directly in terminal status SHIPPED/);
+
+  const badPriority = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-778",
+    "Bad Priority",
+    "--root",
+    target,
+    "--priority",
+    "P9",
+  ]);
+  assert.notEqual(badPriority.status, 0);
+  assert.match(badPriority.stderr, /Invalid --priority P9/);
+
+  const badSkill = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-779",
+    "Bad Skill",
+    "--root",
+    target,
+    "--skill",
+    "missing-skill",
+  ]);
+  assert.notEqual(badSkill.status, 0);
+  assert.match(badSkill.stderr, /Unknown --skill missing-skill/);
+});
+
 test("generated check reports missing managed files", () => {
   const target = path.join(tempDir(), "product");
   assert.equal(run([cli, "init", target]).status, 0);
@@ -448,6 +495,57 @@ test("docs check reports backlog primary doc mismatch", () => {
     JSON.parse(result.stdout).issues.some((issue) => issue.code === "FEAT_BACKLOG_DOC_MISMATCH"),
     true,
   );
+});
+
+test("docs check reports duplicate backlog rows, missing owner docs, and invalid priorities", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  const current = fs.readFileSync(backlogPath, "utf8");
+  fs.writeFileSync(
+    backlogPath,
+    [
+      current.replace("| `P1` |", "| `P9` |").trimEnd(),
+      "| `FEAT-001` | Duplicate | `PLANNED` | `P1` | Duplicate row. | [`FEAT-001-example-feature.md`](features/FEAT-001-example-feature.md) |",
+      "| `FEAT-999` | Missing Owner | `PLANNED` | `P1` | No owner doc. | [`FEAT-999-missing.md`](features/FEAT-999-missing.md) |",
+      "",
+    ].join("\n"),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  const issues = JSON.parse(result.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "BACKLOG_ROW_DUPLICATE"), true);
+  assert.equal(issues.some((issue) => issue.code === "FEAT_OWNER_MISSING"), true);
+  assert.equal(issues.some((issue) => issue.code === "BACKLOG_PRIORITY_INVALID"), true);
+});
+
+test("docs check validates feature risk tier and primary skill", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featurePath = path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md");
+  const text = fs.readFileSync(featurePath, "utf8")
+    .replace("> Risk tier: `T2`", "> Risk tier: `T9`")
+    .replace("> Primary skill: `implementation-surface`", "> Primary skill: `missing-skill`");
+  fs.writeFileSync(featurePath, text);
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  const issues = JSON.parse(result.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "RISK_TIER_INVALID"), true);
+  assert.equal(issues.some((issue) => issue.code === "FEAT_SKILL_MISSING"), true);
 });
 
 test("docs check reports malformed local links instead of crashing", () => {
@@ -708,6 +806,87 @@ test("closeout check rejects backlog primary doc links that escape the configure
     JSON.parse(report.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
     true,
   );
+});
+
+test("closeout check rejects backlog primary doc links outside configured docs roots", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  fs.writeFileSync(path.join(target, "package.json"), "{}\n");
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("features/FEAT-001-example-feature.md", "../../package.json"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  assert.equal(
+    JSON.parse(report.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
+    true,
+  );
+});
+
+test("closeout check rejects projects with missing configured docs roots", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const configPath = path.join(target, ".agentic-doc-governance.json");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.docs.roots = ["governance"];
+  fs.writeFileSync(configPath, JSON.stringify(config));
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  assert.equal(
+    JSON.parse(report.stdout).issues.some((issue) => issue.code === "DOC_ROOT_MISSING"),
+    true,
+  );
+});
+
+test("closeout check reports duplicate, malformed, and invalid-priority backlog rows", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  const current = fs.readFileSync(backlogPath, "utf8");
+  fs.writeFileSync(
+    backlogPath,
+    [
+      current.replace("| `P1` |", "| `P9` |").trimEnd(),
+      "| `FEAT-001` | Missing Cells |",
+      "| `FEAT-001` | Duplicate | `PLANNED` | `P1` | Duplicate row. | [`FEAT-001-example-feature.md`](features/FEAT-001-example-feature.md) |",
+      "",
+    ].join("\n"),
+  );
+
+  const report = run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]);
+
+  assert.notEqual(report.status, 0);
+  const issues = JSON.parse(report.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "BACKLOG_ROW_DUPLICATE"), true);
+  assert.equal(issues.some((issue) => issue.code === "BACKLOG_ROW_MALFORMED"), true);
+  assert.equal(issues.some((issue) => issue.code === "BACKLOG_PRIORITY_INVALID"), true);
 });
 
 test("closeout check rejects shipped unchecked acceptance without waiver", () => {

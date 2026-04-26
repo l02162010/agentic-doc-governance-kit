@@ -44,6 +44,7 @@ export const DEFAULT_CLOSEOUT = {
   backlogPath: "docs/canonical/active-backlog.md",
   featureRoot: "docs/canonical/features",
   validRiskTiers: ["T1", "T2", "T3"],
+  validPriorities: ["P0", "P1", "P2", "P3"],
   formalRiskTiers: ["T1", "T2"],
   requiredMetadataFields: [
     "Status",
@@ -109,6 +110,7 @@ export function loadGovernanceConfig(root) {
       ...DEFAULT_CLOSEOUT,
       ...closeout,
       validRiskTiers: arrayValue(closeout.validRiskTiers, DEFAULT_CLOSEOUT.validRiskTiers),
+      validPriorities: arrayValue(closeout.validPriorities, DEFAULT_CLOSEOUT.validPriorities),
       formalRiskTiers: arrayValue(closeout.formalRiskTiers, DEFAULT_CLOSEOUT.formalRiskTiers),
       requiredMetadataFields: arrayValue(closeout.requiredMetadataFields, DEFAULT_CLOSEOUT.requiredMetadataFields),
       requiredManifestFields: arrayValue(closeout.requiredManifestFields, DEFAULT_CLOSEOUT.requiredManifestFields),

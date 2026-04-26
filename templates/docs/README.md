@@ -37,3 +37,5 @@ To scaffold a new feature owner doc and backlog row:
 ```bash
 agentic-doc-governance feature add FEAT-002 "Feature Name"
 ```
+
+`feature add` starts features in an active planning status only. Move features to `SHIPPED` or `ARCHIVED` by updating the owner doc, backlog row, and closeout evidence together.

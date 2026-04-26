@@ -84,6 +84,21 @@ function addIssue(issues, code, severity, ownerDoc, observed, recommendedFix, fo
   });
 }
 
+function makeIssue(code, severity, ownerDoc, observed, recommendedFix, forbiddenFix) {
+  return {
+    code,
+    severity,
+    ownerDoc,
+    relatedDocs: [],
+    observed,
+    rationale: code,
+    recommendedFix,
+    forbiddenFix,
+    downgradeCondition: "Change this rule only through agent-execution-contract or feature-lifecycle governance.",
+    confidence: 1,
+  };
+}
+
 function parseMetadata(text) {
   const metadata = {};
   for (const line of text.split(/\r?\n/)) {
@@ -158,6 +173,27 @@ function outsideRootError(rawTarget) {
   return error;
 }
 
+function normalizeRootPath(relPath) {
+  const normalized = path.posix.normalize(relPath.replace(/\\/g, "/").replace(/^\/+/, ""));
+  return normalized === "." ? "" : normalized.replace(/\/+$/, "");
+}
+
+function isWithinRoot(candidate, allowedRoot) {
+  return allowedRoot === "" || candidate === allowedRoot || candidate.startsWith(`${allowedRoot}/`);
+}
+
+const configuredDocRoots = config.docs.roots.map(normalizeRootPath);
+const docRootIssues = config.docs.roots
+  .filter((docRoot) => !exists(docRoot))
+  .map((docRoot) => makeIssue(
+    "DOC_ROOT_MISSING",
+    "error",
+    docRoot,
+    { path: docRoot },
+    "Create the configured docs root or remove the stale path from .agentic-doc-governance.json.",
+    "Do not close out features while configured documentation roots are missing.",
+  ));
+
 function normalizeLink(ownerDoc, rawTarget) {
   const target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
   if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
@@ -166,14 +202,22 @@ function normalizeLink(ownerDoc, rawTarget) {
   const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
   const normalized = path.posix.normalize(candidate);
   if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
+  if (configuredDocRoots.length > 0 && !configuredDocRoots.some((docRoot) => isWithinRoot(normalized, docRoot))) {
+    throw outsideRootError(rawTarget);
+  }
   return normalized;
 }
 
-function backlogRow(featureId) {
-  if (!exists(closeoutConfig.backlogPath)) return null;
+function backlogRows(featureId) {
+  if (!exists(closeoutConfig.backlogPath)) return [];
+  const rows = [];
   for (const line of readText(closeoutConfig.backlogPath).split(/\r?\n/)) {
     if (!line.startsWith(`| \`${featureId}\``)) continue;
     const cells = parseMarkdownTableRow(line);
+    if (cells.length < 6) {
+      rows.push({ malformedLine: line });
+      continue;
+    }
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
     let docPath = null;
     let linkError = null;
@@ -186,14 +230,15 @@ function backlogRow(featureId) {
         linkErrorCode = linkIssueCode(error);
       }
     }
-    return {
+    rows.push({
       status: normalizeFeatureStatus(cells[2]),
+      priority: cells[3]?.replace(/`/g, "").trim() ?? "",
       docPath,
       linkError,
       linkErrorCode,
-    };
+    });
   }
-  return null;
+  return rows;
 }
 
 function findFeatureDocs(featureId) {
@@ -376,9 +421,14 @@ if (!featureArg) {
   console.error("Missing required --feature FEAT-xxx argument.");
   process.exit(2);
 }
+if (!/^FEAT-\d+$/.test(featureArg)) {
+  console.error("Invalid --feature value. Expected a feature ID like FEAT-001.");
+  process.exit(2);
+}
 
 const featureDocs = findFeatureDocs(featureArg);
-const row = backlogRow(featureArg);
+const rows = backlogRows(featureArg);
+const row = rows.find((candidate) => !candidate.malformedLine) ?? null;
 const backlogParseIssue = row?.linkError
   ? {
       code: row.linkErrorCode ?? "MALFORMED_INTERNAL_LINK",
@@ -389,6 +439,48 @@ const backlogParseIssue = row?.linkError
       rationale: "Backlog Primary doc link must be parseable.",
       recommendedFix: "Use a valid markdown link target or percent-encode the path correctly.",
       forbiddenFix: "Do not close out while backlog traceability is ambiguous.",
+      downgradeCondition: "Do not downgrade.",
+      confidence: 1,
+    }
+  : null;
+const backlogDuplicateIssue = rows.length > 1
+  ? {
+      code: "BACKLOG_ROW_DUPLICATE",
+      severity: "error",
+      ownerDoc: closeoutConfig.backlogPath,
+      relatedDocs: [],
+      observed: { featureId: featureArg, rowCount: rows.length },
+      rationale: "A formal feature must have exactly one active backlog row.",
+      recommendedFix: "Keep one active backlog row for this feature ID.",
+      forbiddenFix: "Do not close out from competing backlog rows.",
+      downgradeCondition: "Do not downgrade.",
+      confidence: 1,
+    }
+  : null;
+const backlogMalformedIssue = rows.find((candidate) => candidate.malformedLine)
+  ? {
+      code: "BACKLOG_ROW_MALFORMED",
+      severity: "error",
+      ownerDoc: closeoutConfig.backlogPath,
+      relatedDocs: [],
+      observed: { featureId: featureArg },
+      rationale: "Backlog rows must preserve the configured feature table contract.",
+      recommendedFix: "Use the configured backlog columns: ID, Feature, Status, Priority, Summary, Primary doc.",
+      forbiddenFix: "Do not close out from a partial backlog row.",
+      downgradeCondition: "Do not downgrade.",
+      confidence: 1,
+    }
+  : null;
+const backlogPriorityIssue = row && !closeoutConfig.validPriorities.includes(row.priority)
+  ? {
+      code: "BACKLOG_PRIORITY_INVALID",
+      severity: "error",
+      ownerDoc: closeoutConfig.backlogPath,
+      relatedDocs: [],
+      observed: { featureId: featureArg, priority: row.priority, allowedPriorities: closeoutConfig.validPriorities },
+      rationale: "Backlog priority must use the configured vocabulary.",
+      recommendedFix: "Use one of the configured backlog priorities.",
+      forbiddenFix: "Do not invent priority labels without updating governance config.",
       downgradeCondition: "Do not downgrade.",
       confidence: 1,
     }
@@ -448,7 +540,11 @@ if (featureDocs.length > 1) {
     }];
 }
 
+issues.push(...docRootIssues);
 if (backlogParseIssue) issues.push(backlogParseIssue);
+if (backlogDuplicateIssue) issues.push(backlogDuplicateIssue);
+if (backlogMalformedIssue) issues.push(backlogMalformedIssue);
+if (backlogPriorityIssue) issues.push(backlogPriorityIssue);
 
 const report = { ok: issues.every((item) => item.severity !== "error"), root, featureId: featureArg, featurePath, issues };
 

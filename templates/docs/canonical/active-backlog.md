@@ -5,6 +5,7 @@
 # Active Backlog
 
 This is an index. Keep detailed planning in the feature owner doc.
+Priority values use `P0`, `P1`, `P2`, or `P3` unless governance config explicitly changes the vocabulary.
 
 | ID | Feature | Status | Priority | Summary | Primary doc |
 |---|---|---|---|---|---|

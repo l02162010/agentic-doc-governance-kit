@@ -139,6 +139,31 @@ function walk(dir, predicate = () => true) {
   return out.sort();
 }
 
+function installedSkillNames(root, skillRoots) {
+  const skills = new Set();
+  for (const skillRoot of skillRoots) {
+    const absRoot = path.join(root, skillRoot);
+    if (!fs.existsSync(absRoot) || !fs.statSync(absRoot).isDirectory()) continue;
+    for (const entry of fs.readdirSync(absRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (fs.existsSync(path.join(absRoot, entry.name, "SKILL.md"))) skills.add(entry.name);
+    }
+  }
+  return skills;
+}
+
+function formatList(values) {
+  return [...values].join(", ");
+}
+
+function assertSingleLine(label, value) {
+  if (/[\r\n]/.test(value)) throw new UsageError(`${label} must be a single line.`);
+}
+
+function assertBacktickSafe(label, value) {
+  if (value.includes("`")) throw new UsageError(`${label} must not contain backticks.`);
+}
+
 function basenameMatchesFeatureId(file, featureId) {
   const base = path.basename(file);
   return (base === `${featureId}.md` || base.startsWith(`${featureId}-`)) && base.endsWith(".md");
@@ -310,8 +335,37 @@ function addFeature(argv) {
   if (!isValidFeatureStatus(status)) {
     throw new UsageError(`Invalid --status ${status}. Expected one of: ${validFeatureStatusList()}.`);
   }
+  if (["SHIPPED", "ARCHIVED"].includes(status)) {
+    throw new UsageError(`feature add cannot create a feature directly in terminal status ${status}. Create it as IDEA, PLANNED, IN_PROGRESS, or VERIFYING, then close it out through the feature lifecycle.`);
+  }
   if (!config.closeout.validRiskTiers.includes(risk)) {
     throw new UsageError(`Invalid --risk ${risk}. Expected one of: ${config.closeout.validRiskTiers.join(", ")}.`);
+  }
+  if (!config.closeout.validPriorities.includes(priority)) {
+    throw new UsageError(`Invalid --priority ${priority}. Expected one of: ${config.closeout.validPriorities.join(", ")}.`);
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(skill)) {
+    throw new UsageError("--skill must be a repo-local skill name like feature-lifecycle.");
+  }
+  const availableSkills = installedSkillNames(root, config.skills.roots);
+  if (availableSkills.size > 0 && !availableSkills.has(skill)) {
+    throw new UsageError(`Unknown --skill ${skill}. Expected one of: ${formatList(availableSkills)}.`);
+  }
+  for (const [label, value] of [
+    ["feature name", name],
+    ["--summary", summary],
+    ["--owner", owner],
+    ["--skill", skill],
+    ["--priority", priority],
+  ]) {
+    assertSingleLine(label, value);
+  }
+  for (const [label, value] of [
+    ["--owner", owner],
+    ["--skill", skill],
+    ["--priority", priority],
+  ]) {
+    assertBacktickSafe(label, value);
   }
 
   const featureRoot = path.join(root, config.closeout.featureRoot);

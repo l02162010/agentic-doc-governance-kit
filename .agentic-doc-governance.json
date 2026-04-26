@@ -44,6 +44,7 @@
       "templates/.codex/skills/feature-readiness/SKILL.md",
       "templates/.codex/skills/implementation-surface/SKILL.md",
       "examples/basic-product/AGENTS.md",
+      "examples/basic-product/.agentic-doc-governance.json",
       "examples/basic-product/docs/README.md",
       "examples/basic-product/docs/canonical/active-backlog.md",
       "examples/basic-product/docs/canonical/agent-execution-contract.md",

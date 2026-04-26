@@ -19,6 +19,8 @@ Formal features move through a single lifecycle owner doc under `docs/canonical/
 
 - A formal feature has exactly one owner doc.
 - `active-backlog.md` is an index, not a long-form planning document.
+- New feature scaffolds must start in `IDEA`, `PLANNED`, `IN_PROGRESS`, or `VERIFYING`; `SHIPPED` and `ARCHIVED` require lifecycle evidence.
+- Backlog priority values use `P0`, `P1`, `P2`, or `P3` unless governance config explicitly changes the vocabulary.
 - `IN_PROGRESS` requires clear implementation scope, verification path, and expected skill/workflow.
 - `SHIPPED` requires acceptance criteria, verification outcome, side-effect decisions, and residual risk notes.
 - T1/T2 shipped features require a closeout manifest.
