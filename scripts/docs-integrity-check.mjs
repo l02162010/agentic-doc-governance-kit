@@ -6,6 +6,7 @@ import process from "node:process";
 import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
+import { parseMarkdownTableRow } from "./lib/markdown-table.mjs";
 
 let options;
 try {
@@ -85,9 +86,22 @@ function linkIssueCode(error) {
 }
 
 function outsideRootError(rawTarget) {
-  const error = new Error(`Local link target escapes configured root: ${rawTarget}`);
+  const error = new Error(`Local link target escapes configured docs roots: ${rawTarget}`);
   error.code = "INTERNAL_LINK_OUTSIDE_ROOT";
   return error;
+}
+
+function normalizeRootPath(relPath) {
+  const normalized = path.posix.normalize(relPath.replace(/\\/g, "/").replace(/^\/+/, ""));
+  return normalized === "." ? "" : normalized.replace(/\/+$/, "");
+}
+
+function isWithinRoot(candidate, allowedRoot) {
+  return allowedRoot === "" || candidate === allowedRoot || candidate.startsWith(`${allowedRoot}/`);
+}
+
+function isWithinConfiguredDocRoots(candidate) {
+  return configuredDocRoots.length === 0 || configuredDocRoots.some((docRoot) => isWithinRoot(candidate, docRoot));
 }
 
 function normalizeLink(ownerDoc, rawTarget) {
@@ -98,6 +112,7 @@ function normalizeLink(ownerDoc, rawTarget) {
   const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
   const normalized = path.posix.normalize(candidate);
   if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
+  if (!isWithinConfiguredDocRoots(normalized)) throw outsideRootError(rawTarget);
   return normalized;
 }
 
@@ -125,7 +140,7 @@ function parseBacklogRows() {
   const rows = new Map();
   for (const line of readText(backlogPath).split(/\r?\n/)) {
     if (!line.startsWith("| `FEAT-")) continue;
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const cells = parseMarkdownTableRow(line);
     if (cells.length < 6) continue;
     const id = cells[0].replace(/`/g, "");
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
@@ -157,6 +172,7 @@ function parseBacklogRows() {
 
 const issues = [];
 const docRoots = config.docs.roots.filter(exists);
+const configuredDocRoots = docRoots.map(normalizeRootPath);
 const docs = docRoots.flatMap((dir) => walk(dir, (file) => file.endsWith(".md")));
 
 if (checkGenerated) {

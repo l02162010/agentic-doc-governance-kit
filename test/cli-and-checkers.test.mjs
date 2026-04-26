@@ -16,6 +16,13 @@ function run(args, options = {}) {
   });
 }
 
+function runCommand(command, args, options = {}) {
+  return spawnSync(command, args, {
+    cwd: options.cwd ?? repoRoot,
+    encoding: "utf8",
+  });
+}
+
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "adgk-test-"));
 }
@@ -23,6 +30,51 @@ function tempDir() {
 function parseJson(result) {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return JSON.parse(result.stdout);
+}
+
+function addFeatureSmoke(cliPath, target, feature) {
+  const result = run([
+    cliPath,
+    "feature",
+    "add",
+    feature.id,
+    feature.name,
+    "--root",
+    target,
+    "--status",
+    feature.status,
+    "--risk",
+    feature.risk,
+    "--priority",
+    feature.priority,
+    "--summary",
+    feature.summary,
+    "--owner",
+    feature.owner,
+    "--skill",
+    feature.skill,
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function packAndInstallPackage(workspace) {
+  const packDir = path.join(workspace, "pack");
+  const installDir = path.join(workspace, "install");
+  fs.mkdirSync(packDir, { recursive: true });
+  fs.mkdirSync(installDir, { recursive: true });
+
+  const pack = runCommand("npm", ["pack", "--ignore-scripts", "--dry-run=false", "--pack-destination", packDir, "--json"]);
+  assert.equal(pack.status, 0, pack.stderr);
+
+  const [packed] = JSON.parse(pack.stdout);
+  const tarball = path.join(packDir, packed.filename);
+  const install = runCommand("npm", ["install", "--ignore-scripts", "--dry-run=false", "--prefix", installDir, tarball]);
+  assert.equal(install.status, 0, install.stderr);
+
+  return {
+    files: new Set(packed.files.map((file) => file.path)),
+    cliPath: path.join(installDir, "node_modules", "agentic-doc-governance-kit", "bin", "agentic-doc-governance.mjs"),
+  };
 }
 
 test("init installs a self-checking governance footprint", () => {
@@ -38,6 +90,7 @@ test("init installs a self-checking governance footprint", () => {
     "docs/canonical/agent-execution-contract.md",
     ".codex/skills/feature-lifecycle/SKILL.md",
     "scripts/lib/config.mjs",
+    "scripts/lib/markdown-table.mjs",
   ]) {
     assert.equal(fs.existsSync(path.join(target, requiredPath)), true, requiredPath);
   }
@@ -142,6 +195,83 @@ test("feature add creates a traceable owner doc and backlog row", () => {
     /\| `FEAT-002` \| Team Dashboard \| `IDEA` \| `P2` \| Show team status at a glance\. \| \[`FEAT-002-team-dashboard\.md`\]\(features\/FEAT-002-team-dashboard\.md\) \|/,
   );
   assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
+});
+
+test("feature add and checkers handle escaped pipe characters in backlog cells", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const result = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-003",
+    "Team | Dashboard",
+    "--root",
+    target,
+    "--risk",
+    "T3",
+    "--summary",
+    "Show status | trends.",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const backlog = fs.readFileSync(path.join(target, "docs", "canonical", "active-backlog.md"), "utf8");
+  assert.match(backlog, /Team \\\| Dashboard/);
+  assert.match(backlog, /Show status \\\| trends\./);
+  assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
+  assert.equal(run([cli, "closeout-check", "--root", target, "--feature", "FEAT-003"]).status, 0);
+});
+
+test("smoke: initialized project supports multiple feature additions and checker wrappers", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const features = [
+    {
+      id: "FEAT-010",
+      name: "Billing Export",
+      status: "PLANNED",
+      risk: "T1",
+      priority: "P0",
+      summary: "Export billing records for finance review.",
+      owner: "platform",
+      skill: "implementation-surface",
+    },
+    {
+      id: "FEAT-011",
+      name: "Workspace Invitations",
+      status: "IN_PROGRESS",
+      risk: "T2",
+      priority: "P1",
+      summary: "Invite teammates and track pending access.",
+      owner: "product",
+      skill: "feature-lifecycle",
+    },
+    {
+      id: "FEAT-012",
+      name: "Copy Polish",
+      status: "IDEA",
+      risk: "T3",
+      priority: "P3",
+      summary: "Tighten empty state text.",
+      owner: "docs",
+      skill: "feature-readiness",
+    },
+  ];
+
+  for (const feature of features) addFeatureSmoke(cli, target, feature);
+
+  const docsReport = parseJson(run([cli, "docs-check", "--root", target, "--check-generated", "--json"]));
+  assert.equal(docsReport.ok, true);
+  const skillsReport = parseJson(run([cli, "skills-check", "--root", target, "--json"]));
+  assert.equal(skillsReport.ok, true);
+  const closeoutReport = parseJson(run([cli, "closeout-check", "--root", target, "--feature", "FEAT-012", "--json"]));
+  assert.equal(closeoutReport.ok, true);
+
+  const backlog = fs.readFileSync(path.join(target, "docs", "canonical", "active-backlog.md"), "utf8");
+  for (const feature of features) assert.match(backlog, new RegExp(`\\| \`${feature.id}\` \\|`));
 });
 
 test("feature add preflights backlog path before creating owner doc", () => {
@@ -328,6 +458,54 @@ test("docs check rejects local links that escape the configured root", () => {
     JSON.parse(result.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
     true,
   );
+});
+
+test("docs check rejects links that stay in project root but leave configured docs roots", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(target, "package.json"), "{}\n");
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+  fs.writeFileSync(path.join(target, "docs", "README.md"), "[package](../package.json)\n");
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "INTERNAL_LINK_OUTSIDE_ROOT"),
+    true,
+  );
+});
+
+test("docs check allows links between configured docs roots", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs"), { recursive: true });
+  fs.mkdirSync(path.join(target, "handbook"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["docs", "handbook"] },
+      generated: { requiredPaths: [] },
+    }),
+  );
+  fs.writeFileSync(path.join(target, "docs", "README.md"), "[guide](../handbook/guide.md)\n");
+  fs.writeFileSync(path.join(target, "handbook", "guide.md"), "# Guide\n");
+
+  const report = parseJson(run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]));
+
+  assert.equal(report.ok, true);
 });
 
 test("docs check uses configured feature root and backlog path", () => {
@@ -544,4 +722,75 @@ test("checker json output is machine readable on success", () => {
 
   assert.equal(report.ok, true);
   assert.equal(Array.isArray(report.issues), true);
+});
+
+test("packed package includes self-check footprint and installed CLI can initialize a project", () => {
+  const workspace = tempDir();
+  const target = path.join(workspace, "product");
+  const { files, cliPath: installedCli } = packAndInstallPackage(workspace);
+  assert.equal(files.has(".github/workflows/ci.yml"), true);
+  assert.equal(files.has("test/cli-and-checkers.test.mjs"), true);
+  assert.equal(files.has("scripts/lib/markdown-table.mjs"), true);
+
+  const version = run([installedCli, "--version"]);
+  assert.equal(version.status, 0, version.stderr);
+  const init = run([installedCli, "init", target]);
+  assert.equal(init.status, 0, init.stderr);
+  const docsCheck = run([installedCli, "docs-check", "--root", target, "--check-generated"]);
+  assert.equal(docsCheck.status, 0, docsCheck.stderr || docsCheck.stdout);
+});
+
+test("smoke: installed package CLI handles multiple target projects and checker commands", () => {
+  const workspace = tempDir();
+  const { cliPath: installedCli } = packAndInstallPackage(workspace);
+  const alpha = path.join(workspace, "alpha");
+  const beta = path.join(workspace, "beta");
+
+  const alphaDryRun = run([installedCli, "init", alpha, "--dry-run"]);
+  assert.equal(alphaDryRun.status, 0, alphaDryRun.stderr);
+  assert.equal(fs.existsSync(alpha), false);
+
+  assert.equal(run([installedCli, "init", alpha]).status, 0);
+  assert.equal(run([installedCli, "init", beta]).status, 0);
+
+  addFeatureSmoke(installedCli, alpha, {
+    id: "FEAT-020",
+    name: "Alpha Report",
+    status: "VERIFYING",
+    risk: "T2",
+    priority: "P1",
+    summary: "Summarize alpha workflow health.",
+    owner: "alpha-team",
+    skill: "implementation-surface",
+  });
+  addFeatureSmoke(installedCli, alpha, {
+    id: "FEAT-021",
+    name: "Alpha Copy",
+    status: "IDEA",
+    risk: "T3",
+    priority: "P3",
+    summary: "Shorten alpha setup labels.",
+    owner: "docs",
+    skill: "feature-readiness",
+  });
+  addFeatureSmoke(installedCli, beta, {
+    id: "FEAT-030",
+    name: "Beta Audit",
+    status: "PLANNED",
+    risk: "T1",
+    priority: "P0",
+    summary: "Track beta audit evidence.",
+    owner: "security",
+    skill: "feature-lifecycle",
+  });
+
+  for (const target of [alpha, beta]) {
+    const docsCheck = parseJson(run([installedCli, "docs-check", "--root", target, "--check-generated", "--json"]));
+    assert.equal(docsCheck.ok, true);
+    const skillsCheck = parseJson(run([installedCli, "skills-check", "--root", target, "--json"]));
+    assert.equal(skillsCheck.ok, true);
+  }
+
+  const closeoutCheck = parseJson(run([installedCli, "closeout-check", "--root", alpha, "--feature", "FEAT-021", "--json"]));
+  assert.equal(closeoutCheck.ok, true);
 });

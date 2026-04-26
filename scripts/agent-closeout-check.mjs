@@ -6,6 +6,7 @@ import process from "node:process";
 import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
+import { parseMarkdownTableRow } from "./lib/markdown-table.mjs";
 
 let options;
 try {
@@ -172,7 +173,7 @@ function backlogRow(featureId) {
   if (!exists(closeoutConfig.backlogPath)) return null;
   for (const line of readText(closeoutConfig.backlogPath).split(/\r?\n/)) {
     if (!line.startsWith(`| \`${featureId}\``)) continue;
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const cells = parseMarkdownTableRow(line);
     const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
     let docPath = null;
     let linkError = null;

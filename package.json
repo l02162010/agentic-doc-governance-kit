@@ -14,9 +14,11 @@
     "LICENSE",
     "README.md",
     "RELEASE.md",
+    ".github",
     "bin",
     "examples",
     "scripts",
+    "test",
     "templates"
   ],
   "scripts": {

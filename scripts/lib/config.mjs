@@ -37,6 +37,7 @@ export const DEFAULT_GENERATED_REQUIRED_PATHS = [
   "scripts/lib/args.mjs",
   "scripts/lib/config.mjs",
   "scripts/lib/feature-lifecycle.mjs",
+  "scripts/lib/markdown-table.mjs",
 ];
 
 export const DEFAULT_CLOSEOUT = {

@@ -93,6 +93,15 @@ The generated `.agentic-doc-governance.json` keeps the default zero-config behav
 
 Product repos can edit this file when they intentionally adapt the footprint. The default install checks only the generated `docs/`, `.codex/skills/`, and `scripts/` layout.
 
+## Checker Format
+
+The checkers intentionally validate a controlled Markdown contract rather than arbitrary Markdown:
+
+- Feature owner docs use top-of-file `>` metadata and `##` sections from the generated templates.
+- The active backlog uses the generated pipe table columns: `ID`, `Feature`, `Status`, `Priority`, `Summary`, and `Primary doc`.
+- Backlog cells may contain escaped pipe characters (`\|`), including values produced by `feature add`.
+- Local Markdown links are checked relative to the configured docs root; links that escape the root are rejected.
+
 ## Core Contract
 
 The framework splits work into three risk tiers:
@@ -123,6 +132,6 @@ npm test
 npm pack --dry-run
 ```
 
-`npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, and the example product closeout check. CI runs the same command on every pull request.
+`npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, the example product closeout check, and a packed-package smoke test that installs the tarball locally and initializes a project. CI runs the same command on every pull request.
 
 Before publishing, update `CHANGELOG.md` and follow `RELEASE.md`.
