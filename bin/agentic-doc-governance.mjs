@@ -155,8 +155,8 @@ function featureDocText({ id, name, status, risk, owner, skill, backlogPath }) {
 > Legal impact: \`none\`
 > AI impact: \`none\`
 > Release impact: \`none\`
-> Verification: TBD
-> Closeout evidence: TBD
+> Verification: define before implementation
+> Closeout evidence: required before shipped
 > Indexed by: \`${backlogPath}\`
 
 # ${id} - ${name}

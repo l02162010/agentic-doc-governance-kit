@@ -171,6 +171,18 @@ function parseBacklogRows() {
 }
 
 const issues = [];
+for (const docRoot of config.docs.roots) {
+  if (!exists(docRoot)) {
+    issues.push(issue(
+      "DOC_ROOT_MISSING",
+      "error",
+      docRoot,
+      { path: docRoot },
+      "Create the configured docs root or remove the stale path from .agentic-doc-governance.json.",
+      "Do not silently skip a configured documentation root.",
+    ));
+  }
+}
 const docRoots = config.docs.roots.filter(exists);
 const configuredDocRoots = docRoots.map(normalizeRootPath);
 const docs = docRoots.flatMap((dir) => walk(dir, (file) => file.endsWith(".md")));
@@ -222,8 +234,33 @@ for (const doc of docs) {
 
 const featureRoot = config.closeout.featureRoot;
 const backlogPath = config.closeout.backlogPath;
+const featureRootExists = exists(featureRoot);
+const backlogExists = exists(backlogPath);
 
-if (exists(featureRoot) && exists(backlogPath)) {
+if (!featureRootExists && backlogExists) {
+  issues.push(issue(
+    "FEATURE_ROOT_MISSING",
+    "error",
+    featureRoot,
+    { path: featureRoot, backlogPath },
+    "Create the configured feature owner-doc root or update closeout.featureRoot.",
+    "Do not leave backlog feature rows without a configured owner-doc root.",
+  ));
+} else if (featureRootExists && !backlogExists) {
+  const featureDocs = walk(featureRoot, (file) => /^FEAT-\d+.*\.md$/.test(path.basename(file)));
+  if (featureDocs.length > 0) {
+    issues.push(issue(
+      "FEATURE_BACKLOG_MISSING",
+      "error",
+      backlogPath,
+      { path: backlogPath, featureRoot, featureDocs },
+      "Create the configured active backlog or update closeout.backlogPath.",
+      "Do not leave active feature owner docs without a backlog index.",
+    ));
+  }
+}
+
+if (featureRootExists && backlogExists) {
   const backlogRows = parseBacklogRows();
   const featureDocs = walk(featureRoot, (file) => /^FEAT-\d+.*\.md$/.test(path.basename(file)));
   const docsByFeatureId = new Map();

@@ -167,6 +167,27 @@ test("checkers reject unknown options and missing flag values", () => {
   assert.doesNotMatch(missingValue.stderr, /UsageError|at /);
 });
 
+test("skills check reports configured skill roots that do not exist", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ skills: { roots: [".codex/skills"] } }),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "skills-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "SKILL_ROOT_MISSING"),
+    true,
+  );
+});
+
 test("feature add creates a traceable owner doc and backlog row", () => {
   const target = path.join(tempDir(), "product");
   assert.equal(run([cli, "init", target]).status, 0);
@@ -195,6 +216,7 @@ test("feature add creates a traceable owner doc and backlog row", () => {
     /\| `FEAT-002` \| Team Dashboard \| `IDEA` \| `P2` \| Show team status at a glance\. \| \[`FEAT-002-team-dashboard\.md`\]\(features\/FEAT-002-team-dashboard\.md\) \|/,
   );
   assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
+  assert.equal(run([cli, "closeout-check", "--root", target, "--feature", "FEAT-002"]).status, 0);
 });
 
 test("feature add and checkers handle escaped pipe characters in backlog cells", () => {
@@ -325,6 +347,62 @@ test("generated check reports missing managed files", () => {
   const report = JSON.parse(result.stdout);
   assert.equal(report.ok, false);
   assert.equal(report.issues.some((issue) => issue.code === "GENERATED_PATH_MISSING"), true);
+});
+
+test("docs check reports configured docs roots that do not exist", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "DOC_ROOT_MISSING"),
+    true,
+  );
+});
+
+test("docs check reports feature owner docs without a configured backlog", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs", "canonical", "features"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["docs"] },
+      generated: { requiredPaths: [] },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(target, "docs", "canonical", "features", "FEAT-001-missing-backlog.md"),
+    [
+      "> Status: `PLANNED`",
+      "> Risk tier: `T2`",
+      "",
+      "# FEAT-001 - Missing Backlog",
+      "",
+    ].join("\n"),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "FEATURE_BACKLOG_MISSING"),
+    true,
+  );
 });
 
 test("docs check reports duplicate feature owner docs", () => {

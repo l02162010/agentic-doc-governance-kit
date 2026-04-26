@@ -66,10 +66,6 @@ function addIssue(issues, code, severity, ownerDoc, observed, recommendedFix, fo
   });
 }
 
-function discoverSkillRoots() {
-  return config.skills.roots.filter(exists);
-}
-
 function installedSkills(skillRoot) {
   const out = new Map();
   for (const entry of fs.readdirSync(abs(skillRoot), { withFileTypes: true })) {
@@ -93,10 +89,21 @@ function agentsSkillRefs() {
 }
 
 const issues = [];
-const roots = discoverSkillRoots();
 const allInstalled = new Map();
 
-for (const skillRoot of roots) {
+for (const skillRoot of config.skills.roots) {
+  if (!exists(skillRoot)) {
+    addIssue(
+      issues,
+      "SKILL_ROOT_MISSING",
+      "error",
+      skillRoot,
+      { path: skillRoot },
+      "Create the configured skill root or remove the stale path from .agentic-doc-governance.json.",
+      "Do not silently skip a configured skill root.",
+    );
+    continue;
+  }
   const installed = installedSkills(skillRoot);
   const registry = registrySkills(skillRoot);
   for (const [skill, skillFile] of installed) {
