@@ -41,6 +41,100 @@ Or run this toolkit's own checks:
 npm test
 ```
 
+## AI Agent User Guide
+
+Use this section when the AI agent is the direct operator installing and using the kit for a product repo.
+
+### Install Into a Target Repo
+
+1. Confirm the target repo uses Node.js `>=18.17`.
+2. From this kit checkout, inspect the write plan before changing the target repo:
+
+```bash
+node bin/agentic-doc-governance.mjs init /path/to/your-project --dry-run
+```
+
+3. If the plan is correct, initialize the target repo:
+
+```bash
+node bin/agentic-doc-governance.mjs init /path/to/your-project
+```
+
+4. If the package is installed from npm, use the package binary instead:
+
+```bash
+npx agentic-doc-governance-kit init /path/to/your-project --dry-run
+npx agentic-doc-governance-kit init /path/to/your-project
+```
+
+5. If the target repo already has generated files, do not overwrite them by default. Use `--force --backup` only when the user explicitly wants to refresh an existing install while keeping backup copies.
+
+### Start Using It As an AI Agent
+
+After installation, work from inside the target repo and treat repo-local docs as the source of truth:
+
+```bash
+cd /path/to/your-project
+```
+
+Read these files before planning or editing:
+
+1. `AGENTS.md`
+2. `docs/README.md`
+3. `docs/canonical/agent-execution-contract.md`
+4. `docs/canonical/active-backlog.md`
+5. The relevant `docs/canonical/features/FEAT-xxx-*.md`, if one exists
+
+Classify the user's request with `agent-execution-contract.md` before editing. Use `T1` for trust, data, auth, AI behavior, legal, analytics, release, or production impact; use `T2` for user-facing product behavior; use `T3` for small local changes with no product or trust impact.
+
+### Create or Update Feature Work
+
+For a new formal feature, create a feature owner doc and backlog row:
+
+```bash
+agentic-doc-governance feature add FEAT-002 "Onboarding Checklist" \
+  --summary "Guide new users through setup tasks." \
+  --risk T2 \
+  --priority P1 \
+  --owner product
+```
+
+If the package binary is not available in the target repo, use the generated scripts and edit the feature doc directly following `docs/canonical/features/feature-template.md`.
+
+Move a feature through the lifecycle with:
+
+```bash
+agentic-doc-governance feature status FEAT-002 --to IN_PROGRESS --note "Implementation started."
+agentic-doc-governance feature status FEAT-002 --to VERIFYING --note "Ready for verification."
+```
+
+Do not mark a `T1` or `T2` feature as `SHIPPED` until acceptance criteria, verification evidence, side-effect decisions, residual risks, and the closeout manifest are recorded in the owner doc.
+
+### Verify Before Replying
+
+Run checks from the target repo before the final response:
+
+```bash
+node scripts/docs-integrity-check.mjs --check-generated
+node scripts/skills-integrity-check.mjs
+node scripts/agent-closeout-check.mjs --feature FEAT-002
+```
+
+Use `closeout-check` for formal `T1` or `T2` feature closeout. For `T3` changes, run the relevant local test or checker and run docs integrity only when docs changed.
+
+### Final Response Contract
+
+When reporting back to the user, include:
+
+- task class and risk tier used
+- files changed
+- feature status
+- verification commands and results
+- docs, legal, AI, runbook, release, and runtime-contract side effects, or why they do not apply
+- residual risks or blockers
+
+Do not use chat history as the source of truth for feature state. If a decision matters later, record it in the backlog, feature owner doc, canonical docs, runbooks, logs, or releases.
+
 ## CLI
 
 ```bash

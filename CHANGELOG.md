@@ -24,6 +24,7 @@ All notable changes to this project are tracked here.
 - Added a package lockfile for reproducible development installs.
 - Added public repository health files: contribution guide, security policy, badges, Dependabot, and issue templates.
 - Updated CI workflow actions to current Node 24-compatible major versions.
+- Added an AI agent user guide to the README.
 
 ## 0.1.0
 
