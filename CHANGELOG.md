@@ -6,6 +6,12 @@ All notable changes to this project are tracked here.
 
 - None.
 
+## 0.1.2 - 2026-04-27
+
+- Added the `governance-kit-operator` repo-local skill for AI agents installing, refreshing, and operating the kit in target repositories.
+- Documented package and local-checkout CLI paths for feature lifecycle commands so AI agents do not assume a globally installed binary.
+- Updated the generated project shape to include the operator skill.
+
 ## 0.1.1 - 2026-04-27
 
 - Split the CLI entrypoint into smaller `init` and `feature` command modules while preserving the installed package behavior.
