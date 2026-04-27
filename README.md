@@ -89,23 +89,38 @@ Classify the user's request with `agent-execution-contract.md` before editing. U
 
 ### Create or Update Feature Work
 
-For a new formal feature, create a feature owner doc and backlog row:
+For a new formal feature, create a feature owner doc and backlog row. If using the npm package, run from the target repo:
 
 ```bash
-agentic-doc-governance feature add FEAT-002 "Onboarding Checklist" \
+npx agentic-doc-governance-kit feature add FEAT-002 "Onboarding Checklist" --root . \
   --summary "Guide new users through setup tasks." \
   --risk T2 \
   --priority P1 \
   --owner product
 ```
 
-If the package binary is not available in the target repo, use the generated scripts and edit the feature doc directly following `docs/canonical/features/feature-template.md`.
+If operating from a local kit checkout, run the kit binary and point `--root` at the target repo:
+
+```bash
+node /path/to/agentic-doc-governance-kit/bin/agentic-doc-governance.mjs feature add FEAT-002 "Onboarding Checklist" --root /path/to/your-project \
+  --summary "Guide new users through setup tasks." \
+  --risk T2 \
+  --priority P1 \
+  --owner product
+```
 
 Move a feature through the lifecycle with:
 
 ```bash
-agentic-doc-governance feature status FEAT-002 --to IN_PROGRESS --note "Implementation started."
-agentic-doc-governance feature status FEAT-002 --to VERIFYING --note "Ready for verification."
+npx agentic-doc-governance-kit feature status FEAT-002 --root . --to IN_PROGRESS --note "Implementation started."
+npx agentic-doc-governance-kit feature status FEAT-002 --root . --to VERIFYING --note "Ready for verification."
+```
+
+or, from a local kit checkout:
+
+```bash
+node /path/to/agentic-doc-governance-kit/bin/agentic-doc-governance.mjs feature status FEAT-002 --root /path/to/your-project --to IN_PROGRESS --note "Implementation started."
+node /path/to/agentic-doc-governance-kit/bin/agentic-doc-governance.mjs feature status FEAT-002 --root /path/to/your-project --to VERIFYING --note "Ready for verification."
 ```
 
 Do not mark a `T1` or `T2` feature as `SHIPPED` until acceptance criteria, verification evidence, side-effect decisions, residual risks, and the closeout manifest are recorded in the owner doc.
@@ -177,6 +192,7 @@ your-project/
       README.md
       feature-lifecycle/SKILL.md
       feature-readiness/SKILL.md
+      governance-kit-operator/SKILL.md
       implementation-surface/SKILL.md
   scripts/
     docs-integrity-check.mjs

@@ -53,6 +53,7 @@
       "templates/.codex/skills/README.md",
       "templates/.codex/skills/feature-lifecycle/SKILL.md",
       "templates/.codex/skills/feature-readiness/SKILL.md",
+      "templates/.codex/skills/governance-kit-operator/SKILL.md",
       "templates/.codex/skills/implementation-surface/SKILL.md",
       "examples/basic-product/AGENTS.md",
       "examples/basic-product/.agentic-doc-governance.json",

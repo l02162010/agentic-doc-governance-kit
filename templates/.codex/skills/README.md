@@ -4,6 +4,7 @@
 |---|---|
 | `feature-lifecycle` | Manage feature intake, backlog, feature docs, status changes, closeout, and docs placement |
 | `feature-readiness` | Run pre-implementation readiness review and blocker analysis |
+| `governance-kit-operator` | Install, refresh, and operate Agentic Doc Governance Kit in a target repo |
 | `implementation-surface` | Implement or review the project-specific product surface after lifecycle handoff |
 
 After changing repo-local skills, this registry, or `AGENTS.md` skill routing, run:
