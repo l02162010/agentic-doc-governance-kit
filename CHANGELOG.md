@@ -4,7 +4,7 @@ All notable changes to this project are tracked here.
 
 ## Unreleased
 
-- None.
+- Added consistently named `governance-kit-*` maintenance skills for release operation, kit review, skill authoring, target repo smoke testing, and feature CLI changes.
 
 ## 0.1.2 - 2026-04-27
 

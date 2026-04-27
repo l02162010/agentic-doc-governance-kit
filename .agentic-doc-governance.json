@@ -7,6 +7,7 @@
   },
   "skills": {
     "roots": [
+      ".codex/skills",
       "templates/.codex/skills",
       "examples/basic-product/.codex/skills"
     ]
@@ -50,6 +51,12 @@
       "templates/docs/canonical/features/FEAT-001-example-feature.md",
       "templates/docs/canonical/features/feature-template.md",
       "templates/docs/runbooks/docs-integrity-check.md",
+      ".codex/skills/README.md",
+      ".codex/skills/governance-kit-feature-cli/SKILL.md",
+      ".codex/skills/governance-kit-release/SKILL.md",
+      ".codex/skills/governance-kit-review/SKILL.md",
+      ".codex/skills/governance-kit-skill-authoring/SKILL.md",
+      ".codex/skills/governance-kit-target-smoke/SKILL.md",
       "templates/.codex/skills/README.md",
       "templates/.codex/skills/feature-lifecycle/SKILL.md",
       "templates/.codex/skills/feature-readiness/SKILL.md",
