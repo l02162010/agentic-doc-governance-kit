@@ -94,6 +94,7 @@ test("init installs a self-checking governance footprint", () => {
   ]) {
     assert.equal(fs.existsSync(path.join(target, requiredPath)), true, requiredPath);
   }
+  assert.equal(fs.existsSync(path.join(target, "scripts", "package-metadata-check.mjs")), false);
 
   assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
   assert.equal(run([cli, "skills-check", "--root", target]).status, 0);
@@ -793,6 +794,79 @@ test("docs check rejects links that stay in project root but leave configured do
   );
 });
 
+test("docs check validates configured paths before scanning", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["../docs"] },
+      generated: { requiredPaths: [] },
+    }),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /docs\.roots\[0\] must stay inside the project root/);
+  assert.doesNotMatch(result.stderr, /GovernanceConfigError|at /);
+});
+
+test("docs check allows repo-root documentation roots", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["."] },
+      generated: { requiredPaths: [] },
+    }),
+  );
+  fs.writeFileSync(path.join(target, "README.md"), "# Root Docs\n");
+
+  const report = parseJson(run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]));
+
+  assert.equal(report.ok, true);
+});
+
+test("feature add rejects unsafe closeout paths before writing files", () => {
+  const target = tempDir();
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({
+      docs: { roots: ["docs"] },
+      skills: { roots: [] },
+      generated: { requiredPaths: [] },
+      closeout: {
+        backlogPath: "../backlog.md",
+        featureRoot: "docs/canonical/features",
+      },
+    }),
+  );
+
+  const result = run([
+    cli,
+    "feature",
+    "add",
+    "FEAT-404",
+    "Unsafe Config",
+    "--root",
+    target,
+  ]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /closeout\.backlogPath must stay inside the project root/);
+  assert.equal(fs.existsSync(path.join(target, "docs", "canonical", "features", "FEAT-404-unsafe-config.md")), false);
+});
+
 test("docs check allows links between configured docs roots", () => {
   const target = tempDir();
   fs.mkdirSync(path.join(target, "docs"), { recursive: true });
@@ -815,6 +889,37 @@ test("docs check allows links between configured docs roots", () => {
   ]));
 
   assert.equal(report.ok, true);
+});
+
+test("docs check validates reference-style markdown links", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+  fs.writeFileSync(
+    path.join(target, "docs", "README.md"),
+    [
+      "[guide][guide]",
+      "",
+      "[guide]: missing-guide.md \"Guide\"",
+      "",
+    ].join("\n"),
+  );
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    JSON.parse(result.stdout).issues.some((issue) => issue.code === "BROKEN_INTERNAL_LINK" && issue.observed.target === "missing-guide.md"),
+    true,
+  );
 });
 
 test("docs check uses configured feature root and backlog path", () => {
@@ -1114,12 +1219,94 @@ test("checker json output is machine readable on success", () => {
   assert.equal(Array.isArray(report.issues), true);
 });
 
+function packageFixture(overrides = {}) {
+  return {
+    name: "fixture-package",
+    version: "1.0.0",
+    description: "Fixture package.",
+    license: "MIT",
+    bin: { "agentic-doc-governance": "bin/agentic-doc-governance.mjs" },
+    files: ["bin", "scripts", "templates"],
+    ...overrides,
+  };
+}
+
+function writePackageFixture(pkg) {
+  const target = tempDir();
+  const packagePath = path.join(target, "package.json");
+  fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2));
+  return packagePath;
+}
+
+test("package metadata check warns in development and blocks strict fixture checks", () => {
+  const packagePath = writePackageFixture(packageFixture());
+
+  const relaxed = parseJson(run([
+    path.join(repoRoot, "scripts", "package-metadata-check.mjs"),
+    "--package",
+    packagePath,
+    "--json",
+  ]));
+  assert.equal(relaxed.ok, true);
+  assert.equal(relaxed.issues.some((issue) => issue.code === "PACKAGE_REPOSITORY_MISSING" && issue.severity === "warning"), true);
+
+  const strict = run([
+    path.join(repoRoot, "scripts", "package-metadata-check.mjs"),
+    "--package",
+    packagePath,
+    "--strict",
+    "--json",
+  ]);
+  assert.equal(strict.status, 1);
+  assert.equal(
+    JSON.parse(strict.stdout).issues.some((issue) => issue.code === "PACKAGE_REPOSITORY_MISSING" && issue.severity === "error"),
+    true,
+  );
+});
+
+test("package metadata check rejects malformed git repository URLs and accepts public URLs", () => {
+  const malformedPackage = writePackageFixture(packageFixture({
+    repository: "git+not-a-url",
+    homepage: "https://example.com/fixture-package",
+    bugs: { url: "https://example.com/fixture-package/issues" },
+  }));
+
+  const malformed = run([
+    path.join(repoRoot, "scripts", "package-metadata-check.mjs"),
+    "--package",
+    malformedPackage,
+    "--strict",
+    "--json",
+  ]);
+  assert.equal(malformed.status, 1);
+  assert.equal(
+    JSON.parse(malformed.stdout).issues.some((issue) => issue.code === "PACKAGE_REPOSITORY_WEAK"),
+    true,
+  );
+
+  const validPackage = writePackageFixture(packageFixture({
+    repository: { type: "git", url: "git+https://github.com/example/fixture-package.git" },
+    homepage: "https://github.com/example/fixture-package#readme",
+    bugs: { url: "https://github.com/example/fixture-package/issues" },
+  }));
+  const valid = parseJson(run([
+    path.join(repoRoot, "scripts", "package-metadata-check.mjs"),
+    "--package",
+    validPackage,
+    "--strict",
+    "--json",
+  ]));
+
+  assert.equal(valid.ok, true);
+});
+
 test("packed package includes self-check footprint and installed CLI can initialize a project", () => {
   const workspace = tempDir();
   const target = path.join(workspace, "product");
   const { files, cliPath: installedCli } = packAndInstallPackage(workspace);
   assert.equal(files.has(".github/workflows/ci.yml"), false);
   assert.equal(files.has("test/cli-and-checkers.test.mjs"), false);
+  assert.equal(files.has("scripts/package-metadata-check.mjs"), true);
   assert.equal(files.has("scripts/lib/governance-markdown.mjs"), true);
   assert.equal(files.has("scripts/lib/markdown-table.mjs"), true);
 

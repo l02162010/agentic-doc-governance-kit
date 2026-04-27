@@ -51,7 +51,13 @@ if (options.positionals.length > 0) {
 
 const root = path.resolve(options.flags.root ?? process.cwd());
 const featureArg = options.flags.feature;
-const config = loadGovernanceConfig(root);
+let config;
+try {
+  config = loadGovernanceConfig(root);
+} catch (error) {
+  console.error(error.message);
+  process.exit(error.exitCode ?? 1);
+}
 const closeoutConfig = config.closeout;
 
 function abs(relPath) {

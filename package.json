@@ -23,9 +23,12 @@
     "docs-check": "node scripts/docs-integrity-check.mjs --check-generated",
     "skills-check": "node scripts/skills-integrity-check.mjs",
     "closeout-check": "node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001",
+    "metadata-check": "node scripts/package-metadata-check.mjs",
+    "release-check": "npm test && node scripts/package-metadata-check.mjs --strict && npm pack --dry-run",
     "check": "node scripts/docs-integrity-check.mjs --check-generated && node scripts/skills-integrity-check.mjs && node scripts/agent-closeout-check.mjs --self-test && node scripts/agent-closeout-check.mjs --root examples/basic-product --feature FEAT-001",
     "test": "node --test && npm run check",
-    "prepack": "npm test"
+    "prepack": "npm test",
+    "prepublishOnly": "node scripts/package-metadata-check.mjs --strict && npm test"
   },
   "publishConfig": {
     "access": "public"

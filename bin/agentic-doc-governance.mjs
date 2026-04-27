@@ -41,13 +41,13 @@ function packageVersion() {
   return pkg.version;
 }
 
-function collectFiles(sourceDir, targetDir) {
+function collectFiles(sourceDir, targetDir, predicate = () => true) {
   const files = [];
   for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
     const source = path.join(sourceDir, entry.name);
     const target = path.join(targetDir, entry.name);
-    if (entry.isDirectory()) files.push(...collectFiles(source, target));
-    else files.push({ source, target });
+    if (entry.isDirectory()) files.push(...collectFiles(source, target, predicate));
+    else if (predicate(source)) files.push({ source, target });
   }
   return files;
 }
@@ -59,7 +59,7 @@ function installFiles(target) {
       target: path.join(target, "AGENTS.md"),
     },
     ...collectFiles(path.join(KIT_ROOT, "templates"), target),
-    ...collectFiles(path.join(KIT_ROOT, "scripts"), path.join(target, "scripts")),
+    ...collectFiles(path.join(KIT_ROOT, "scripts"), path.join(target, "scripts"), (source) => path.basename(source) !== "package-metadata-check.mjs"),
   ];
 }
 

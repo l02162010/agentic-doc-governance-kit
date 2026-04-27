@@ -37,7 +37,13 @@ if (options.positionals.length > 0) {
 }
 
 const root = path.resolve(options.flags.root ?? process.cwd());
-const config = loadGovernanceConfig(root);
+let config;
+try {
+  config = loadGovernanceConfig(root);
+} catch (error) {
+  console.error(error.message);
+  process.exit(error.exitCode ?? 1);
+}
 
 function abs(relPath) {
   return path.join(root, relPath);

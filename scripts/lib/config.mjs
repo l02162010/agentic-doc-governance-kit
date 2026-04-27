@@ -3,6 +3,14 @@ import path from "node:path";
 
 export const CONFIG_FILE = ".agentic-doc-governance.json";
 
+export class GovernanceConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "GovernanceConfigError";
+    this.exitCode = 2;
+  }
+}
+
 export const DEFAULT_DOC_ROOTS = [
   "docs",
   "templates/docs",
@@ -80,12 +88,46 @@ export const DEFAULT_CLOSEOUT = {
   ],
 };
 
-function arrayValue(value, fallback) {
-  return Array.isArray(value) ? value : fallback;
-}
-
 function objectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function validateRelativePath(value, label, { allowCurrent = false } = {}) {
+  if (typeof value !== "string") throw new GovernanceConfigError(`${label} must be a string path.`);
+  if (value.length === 0) throw new GovernanceConfigError(`${label} must not be empty.`);
+  if (value !== value.trim()) throw new GovernanceConfigError(`${label} must not contain leading or trailing whitespace.`);
+  if (value.includes("\0")) throw new GovernanceConfigError(`${label} must not contain null bytes.`);
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) throw new GovernanceConfigError(`${label} must be a relative repo-local path, not a URL or drive path: ${value}`);
+
+  const withForwardSlashes = value.replace(/\\/g, "/");
+  if (path.posix.isAbsolute(withForwardSlashes) || path.isAbsolute(value)) {
+    throw new GovernanceConfigError(`${label} must be a relative repo-local path: ${value}`);
+  }
+
+  const normalized = path.posix.normalize(withForwardSlashes);
+  if (normalized === ".") {
+    if (allowCurrent) return normalized;
+    throw new GovernanceConfigError(`${label} must not point at the project root: ${value}`);
+  }
+  if (normalized === ".." || normalized.startsWith("../")) {
+    throw new GovernanceConfigError(`${label} must stay inside the project root: ${value}`);
+  }
+  return normalized.replace(/\/+$/, "");
+}
+
+function arrayValue(value, fallback, label, { pathValues = false, allowEmpty = true, allowCurrentPath = false } = {}) {
+  const source = value === undefined ? fallback : value;
+  if (!Array.isArray(source)) throw new GovernanceConfigError(`${label} must be an array.`);
+  if (!allowEmpty && source.length === 0) throw new GovernanceConfigError(`${label} must not be empty.`);
+  return source.map((item, index) => {
+    const itemLabel = `${label}[${index}]`;
+    if (pathValues) return validateRelativePath(item, itemLabel, { allowCurrent: allowCurrentPath });
+    if (typeof item !== "string" || item.length === 0) {
+      throw new GovernanceConfigError(`${itemLabel} must be a non-empty string.`);
+    }
+    if (/[\r\n]/.test(item)) throw new GovernanceConfigError(`${itemLabel} must be a single line.`);
+    return item;
+  });
 }
 
 function readConfig(root) {
@@ -95,7 +137,7 @@ function readConfig(root) {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`Invalid ${CONFIG_FILE}: ${error.message}`);
+    throw new GovernanceConfigError(`Invalid ${CONFIG_FILE}: ${error.message}`);
   }
 }
 
@@ -108,23 +150,25 @@ export function loadGovernanceConfig(root) {
 
   return {
     docs: {
-      roots: arrayValue(docs.roots, DEFAULT_DOC_ROOTS),
+      roots: arrayValue(docs.roots, DEFAULT_DOC_ROOTS, "docs.roots", { pathValues: true, allowEmpty: false, allowCurrentPath: true }),
     },
     skills: {
-      roots: arrayValue(skills.roots, DEFAULT_SKILL_ROOTS),
+      roots: arrayValue(skills.roots, DEFAULT_SKILL_ROOTS, "skills.roots", { pathValues: true, allowCurrentPath: true }),
     },
     generated: {
-      requiredPaths: arrayValue(generated.requiredPaths, DEFAULT_GENERATED_REQUIRED_PATHS),
+      requiredPaths: arrayValue(generated.requiredPaths, DEFAULT_GENERATED_REQUIRED_PATHS, "generated.requiredPaths", { pathValues: true }),
     },
     closeout: {
       ...DEFAULT_CLOSEOUT,
       ...closeout,
-      validRiskTiers: arrayValue(closeout.validRiskTiers, DEFAULT_CLOSEOUT.validRiskTiers),
-      validPriorities: arrayValue(closeout.validPriorities, DEFAULT_CLOSEOUT.validPriorities),
-      formalRiskTiers: arrayValue(closeout.formalRiskTiers, DEFAULT_CLOSEOUT.formalRiskTiers),
-      requiredMetadataFields: arrayValue(closeout.requiredMetadataFields, DEFAULT_CLOSEOUT.requiredMetadataFields),
-      requiredManifestFields: arrayValue(closeout.requiredManifestFields, DEFAULT_CLOSEOUT.requiredManifestFields),
-      requiredFeatureSections: arrayValue(closeout.requiredFeatureSections, DEFAULT_CLOSEOUT.requiredFeatureSections),
+      backlogPath: validateRelativePath(closeout.backlogPath ?? DEFAULT_CLOSEOUT.backlogPath, "closeout.backlogPath"),
+      featureRoot: validateRelativePath(closeout.featureRoot ?? DEFAULT_CLOSEOUT.featureRoot, "closeout.featureRoot"),
+      validRiskTiers: arrayValue(closeout.validRiskTiers, DEFAULT_CLOSEOUT.validRiskTiers, "closeout.validRiskTiers"),
+      validPriorities: arrayValue(closeout.validPriorities, DEFAULT_CLOSEOUT.validPriorities, "closeout.validPriorities"),
+      formalRiskTiers: arrayValue(closeout.formalRiskTiers, DEFAULT_CLOSEOUT.formalRiskTiers, "closeout.formalRiskTiers"),
+      requiredMetadataFields: arrayValue(closeout.requiredMetadataFields, DEFAULT_CLOSEOUT.requiredMetadataFields, "closeout.requiredMetadataFields"),
+      requiredManifestFields: arrayValue(closeout.requiredManifestFields, DEFAULT_CLOSEOUT.requiredManifestFields, "closeout.requiredManifestFields"),
+      requiredFeatureSections: arrayValue(closeout.requiredFeatureSections, DEFAULT_CLOSEOUT.requiredFeatureSections, "closeout.requiredFeatureSections"),
     },
   };
 }

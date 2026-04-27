@@ -43,7 +43,7 @@ npm test
 agentic-doc-governance init <target-dir> [--force]
 agentic-doc-governance init <target-dir> [--dry-run] [--json]
 agentic-doc-governance init <target-dir> --force --backup
-agentic-doc-governance feature add FEAT-xxx <name> [--root <dir>] [--status IDEA] [--risk T2] [--priority P2] [--summary <text>] [--dry-run]
+agentic-doc-governance feature add FEAT-xxx <name> [--root <dir>] [--status IDEA] [--risk T2] [--priority P2] [--summary <text>] [--owner <name>] [--skill <skill>] [--dry-run]
 agentic-doc-governance feature status FEAT-xxx --to <status> [--root <dir>] [--note <text>] [--dry-run] [--json]
 agentic-doc-governance docs-check [--root <dir>] [--check-generated] [--json]
 agentic-doc-governance skills-check [--root <dir>] [--json]
@@ -97,6 +97,8 @@ The generated `.agentic-doc-governance.json` keeps the default zero-config behav
 
 Product repos can edit this file when they intentionally adapt the footprint. The default install checks only the generated `docs/`, `.codex/skills/`, and `scripts/` layout.
 
+All configured paths must be relative repo-local paths. Absolute paths, URL-like values, drive paths, empty paths, and paths that traverse above the project root are rejected before any checker scan or CLI write.
+
 ## Checker Format
 
 The checkers intentionally validate a controlled Markdown contract rather than arbitrary Markdown:
@@ -105,7 +107,7 @@ The checkers intentionally validate a controlled Markdown contract rather than a
 - The active backlog uses the generated pipe table columns: `ID`, `Feature`, `Status`, `Priority`, `Summary`, and `Primary doc`.
 - Backlog priorities use `P0`, `P1`, `P2`, or `P3` unless `.agentic-doc-governance.json` intentionally defines another vocabulary.
 - Backlog cells may contain escaped pipe characters (`\|`), including values produced by `feature add`.
-- Local Markdown links are checked relative to the configured docs root; links that escape the root are rejected.
+- Local Markdown inline and reference-style links are checked relative to the configured docs root; links that escape the root are rejected.
 - Feature owner docs must keep the configured required sections, including problem, goal, scope, acceptance criteria, and rollout/verification.
 
 ## Core Contract
@@ -135,9 +137,13 @@ Do not put project secrets, credentials, private data, or product-specific absol
 
 ```bash
 npm test
+npm run metadata-check
+npm run release-check
 npm pack --dry-run
 ```
 
 `npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, the example product closeout check, and a packed-package smoke test that installs the tarball locally and initializes a project. CI runs the same command on every pull request.
 
-Before publishing, update `CHANGELOG.md` and follow `RELEASE.md`.
+`metadata-check` reports missing public package URLs as warnings during development. `release-check` and `prepublishOnly` run the same check in strict mode, so publishing is blocked until `repository`, `homepage`, and `bugs.url` point at real public project URLs.
+
+Before publishing, update `CHANGELOG.md`, set the public package URLs, and follow `RELEASE.md`.

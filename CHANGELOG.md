@@ -7,6 +7,9 @@ All notable changes to this project are tracked here.
 - Tightened `feature add` validation for terminal statuses, backlog priorities, and repo-local skill names.
 - Added backlog duplicate, malformed row, orphan owner-doc, invalid priority, invalid risk tier, and missing primary skill detection.
 - Aligned closeout backlog link checks with configured documentation roots.
+- Added centralized governance config path validation so configured paths cannot escape the project root.
+- Added reference-style Markdown link checking.
+- Added a package metadata release gate for public npm publishing.
 
 ## 0.1.0
 

@@ -51,7 +51,9 @@ export function hasSection(text, heading) {
 }
 
 export function extractLinks(text) {
-  return [...text.matchAll(/!?\[[^\]\n]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
+  const inlineLinks = [...text.matchAll(/!?\[[^\]\n]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
+  const referenceLinks = [...text.matchAll(/^\s{0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|[^\s]+)(?:\s+["'][^"']*["'])?\s*$/gm)].map((match) => match[1]);
+  return [...inlineLinks, ...referenceLinks];
 }
 
 export function normalizeRootPath(relPath) {
