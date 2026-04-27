@@ -4,11 +4,7 @@ All notable changes to this project are tracked here.
 
 ## Unreleased
 
-- Fixed backlog Primary doc parsing for paths with balanced parentheses.
-- Made `feature status --dry-run --to SHIPPED` run the same closeout validation as real writes.
-- Added rollback-backed multi-file writes for feature owner doc and backlog updates.
-- Aligned the pinned npm package manager with the supported Node 18 runtime range.
-- Added a package lockfile for reproducible development installs.
+- None.
 
 ## 0.1.1 - 2026-04-27
 
@@ -21,6 +17,12 @@ All notable changes to this project are tracked here.
 - Added centralized governance config path validation so configured paths cannot escape the project root.
 - Added reference-style Markdown link checking.
 - Added a package metadata release gate for public npm publishing.
+- Fixed backlog Primary doc parsing for paths with balanced parentheses.
+- Made `feature status --dry-run --to SHIPPED` run the same closeout validation as real writes.
+- Added rollback-backed multi-file writes for feature owner doc and backlog updates.
+- Aligned the pinned npm package manager with the supported Node 18 runtime range.
+- Added a package lockfile for reproducible development installs.
+- Added public repository health files: contribution guide, security policy, badges, Dependabot, and issue templates.
 
 ## 0.1.0
 

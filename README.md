@@ -1,5 +1,9 @@
 # Agentic Doc Governance Kit
 
+[![CI](https://github.com/l02162010/agentic-doc-governance-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/l02162010/agentic-doc-governance-kit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node.js >=18.17](https://img.shields.io/badge/node-%3E%3D18.17-brightgreen.svg)
+
 A reusable documentation governance framework for AI-agent-managed software projects.
 
 The goal is simple: a user should be able to describe a desired product feature in natural language, and an AI agent should have enough repo-local structure to classify the work, choose the right workflow, implement safely, verify the result, and close it out without relying on chat history as the source of truth.

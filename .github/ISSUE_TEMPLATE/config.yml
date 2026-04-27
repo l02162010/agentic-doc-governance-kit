@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/l02162010/agentic-doc-governance-kit/security/advisories/new
+    about: Please report security issues privately.
