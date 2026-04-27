@@ -20,7 +20,7 @@ From this repo or an installed package:
 ```bash
 node bin/agentic-doc-governance.mjs init /path/to/your-project
 # or, after publishing:
-npx agentic-doc-governance init /path/to/your-project
+npx agentic-doc-governance-kit init /path/to/your-project
 ```
 
 Then in the target project:
