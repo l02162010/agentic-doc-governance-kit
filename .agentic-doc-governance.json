@@ -27,6 +27,8 @@
       "scripts/agent-closeout-check.mjs",
       "scripts/package-metadata-check.mjs",
       "scripts/lib/args.mjs",
+      "scripts/lib/cli-feature.mjs",
+      "scripts/lib/cli-init.mjs",
       "scripts/lib/config.mjs",
       "scripts/lib/feature-lifecycle.mjs",
       "scripts/lib/governance-markdown.mjs",

@@ -108,6 +108,7 @@ The checkers intentionally validate a controlled Markdown contract rather than a
 - Backlog priorities use `P0`, `P1`, `P2`, or `P3` unless `.agentic-doc-governance.json` intentionally defines another vocabulary.
 - Backlog cells may contain escaped pipe characters (`\|`), including values produced by `feature add`.
 - Local Markdown inline and reference-style links are checked relative to the configured docs root; links that escape the root are rejected.
+- Link checks intentionally ignore fenced code blocks and inline code spans, and support the kit's controlled Markdown forms: normal links, reference links, angle-bracket destinations, percent-encoded paths, and balanced parentheses in local paths.
 - Feature owner docs must keep the configured required sections, including problem, goal, scope, acceptance criteria, and rollout/verification.
 
 ## Core Contract
@@ -144,6 +145,8 @@ npm pack --dry-run
 
 `npm test` runs the Node test suite, docs integrity, skills integrity, closeout self-tests, the example product closeout check, and a packed-package smoke test that installs the tarball locally and initializes a project. CI runs the same command on every pull request.
 
+The CLI entrypoint stays thin: `bin/agentic-doc-governance.mjs` only handles command dispatch, while reusable command behavior lives under `scripts/lib/`. Any new runtime module in `scripts/lib/` must be included by the generated-footprint checks and covered by the packed-package smoke test.
+
 `metadata-check` reports missing public package URLs as warnings during development. `release-check` and `prepublishOnly` run the same check in strict mode, so publishing is blocked until `repository`, `homepage`, and `bugs.url` point at real public project URLs.
 
-Before publishing, update `CHANGELOG.md`, set the public package URLs, and follow `RELEASE.md`.
+Before publishing, update `CHANGELOG.md`, set the public package URLs, and follow `RELEASE.md`. `release-check` intentionally fails until `repository`, `homepage`, and `bugs.url` identify the real public project locations.

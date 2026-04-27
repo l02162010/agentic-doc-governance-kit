@@ -50,9 +50,102 @@ export function hasSection(text, heading) {
   return text.split(/\r?\n/).some((line) => line.trim() === `## ${heading}`);
 }
 
+function stripCodeSpans(line) {
+  let out = "";
+  let index = 0;
+  while (index < line.length) {
+    if (line[index] !== "`") {
+      out += line[index];
+      index += 1;
+      continue;
+    }
+    const tickRun = line.slice(index).match(/^`+/)?.[0] ?? "";
+    const close = line.indexOf(tickRun, index + tickRun.length);
+    if (close === -1) {
+      out += line[index];
+      index += 1;
+    } else {
+      out += " ".repeat(close + tickRun.length - index);
+      index = close + tickRun.length;
+    }
+  }
+  return out;
+}
+
+function stripCodeBlocks(text) {
+  let inFence = false;
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      if (/^\s{0,3}(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return "";
+      }
+      return inFence ? "" : stripCodeSpans(line);
+    })
+    .join("\n");
+}
+
+function readInlineDestination(text, start) {
+  let index = start;
+  while (/\s/.test(text[index] ?? "")) index += 1;
+  if (index >= text.length) return null;
+
+  if (text[index] === "<") {
+    const end = text.indexOf(">", index + 1);
+    if (end === -1) return null;
+    return text.slice(index, end + 1);
+  }
+
+  let destination = "";
+  let depth = 0;
+  for (; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "\\") {
+      destination += char;
+      if (index + 1 < text.length) {
+        destination += text[index + 1];
+        index += 1;
+      }
+      continue;
+    }
+    if (/\s/.test(char) && depth === 0) break;
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+    destination += char;
+  }
+  return destination || null;
+}
+
+function hasOpeningLinkBracket(text, closeBracketIndex) {
+  for (let index = closeBracketIndex - 1; index >= 0; index -= 1) {
+    const char = text[index];
+    if (char === "\n") return false;
+    if (char !== "[") continue;
+    const slashCount = [...text.slice(0, index).matchAll(/\\+$/g)][0]?.[0].length ?? 0;
+    return slashCount % 2 === 0;
+  }
+  return false;
+}
+
+function extractInlineLinks(text) {
+  const links = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "]" || text[index + 1] !== "(") continue;
+    if (!hasOpeningLinkBracket(text, index)) continue;
+    const destination = readInlineDestination(text, index + 2);
+    if (destination) links.push(destination);
+  }
+  return links;
+}
+
 export function extractLinks(text) {
-  const inlineLinks = [...text.matchAll(/!?\[[^\]\n]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
-  const referenceLinks = [...text.matchAll(/^\s{0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|[^\s]+)(?:\s+["'][^"']*["'])?\s*$/gm)].map((match) => match[1]);
+  const linkableText = stripCodeBlocks(text);
+  const inlineLinks = extractInlineLinks(linkableText);
+  const referenceLinks = [...linkableText.matchAll(/^\s{0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|[^\s]+)(?:\s+["'][^"']*["'])?\s*$/gm)].map((match) => match[1]);
   return [...inlineLinks, ...referenceLinks];
 }
 

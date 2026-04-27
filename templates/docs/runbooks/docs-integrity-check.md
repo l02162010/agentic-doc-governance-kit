@@ -19,6 +19,10 @@ node scripts/agent-closeout-check.mjs --self-test
 
 Every issue should identify owner doc, observed value, recommended fix, forbidden fix, and confidence.
 
+## Markdown Link Scope
+
+The checker validates a controlled Markdown contract, not every CommonMark edge case. It checks normal links, reference links, angle-bracket destinations, percent-encoded paths, and balanced parentheses in local paths. It ignores fenced code blocks and inline code spans so examples can show invalid links without creating false positives.
+
 ## Core Issue Codes
 
 | Code | Severity | Meaning | Typical repair |

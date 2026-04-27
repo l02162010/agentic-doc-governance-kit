@@ -43,6 +43,8 @@ export const DEFAULT_GENERATED_REQUIRED_PATHS = [
   "scripts/skills-integrity-check.mjs",
   "scripts/agent-closeout-check.mjs",
   "scripts/lib/args.mjs",
+  "scripts/lib/cli-feature.mjs",
+  "scripts/lib/cli-init.mjs",
   "scripts/lib/config.mjs",
   "scripts/lib/feature-lifecycle.mjs",
   "scripts/lib/governance-markdown.mjs",

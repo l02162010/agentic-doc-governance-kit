@@ -89,6 +89,8 @@ test("init installs a self-checking governance footprint", () => {
     "AGENTS.md",
     "docs/canonical/agent-execution-contract.md",
     ".codex/skills/feature-lifecycle/SKILL.md",
+    "scripts/lib/cli-feature.mjs",
+    "scripts/lib/cli-init.mjs",
     "scripts/lib/config.mjs",
     "scripts/lib/markdown-table.mjs",
   ]) {
@@ -922,6 +924,67 @@ test("docs check validates reference-style markdown links", () => {
   );
 });
 
+test("docs check handles controlled markdown link forms and ignores code examples", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs", "guides"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+  fs.writeFileSync(path.join(target, "docs", "guides", "rollout (v1).md"), "# Rollout\n");
+  fs.writeFileSync(path.join(target, "docs", "guides", "api(v1).md"), "# API\n");
+  fs.writeFileSync(path.join(target, "docs", "guides", "space guide.md"), "# Space Guide\n");
+  fs.writeFileSync(
+    path.join(target, "docs", "README.md"),
+    [
+      "[balanced](guides/rollout%20%28v1%29.md)",
+      "[paren](guides/api(v1).md)",
+      "[angle](<guides/space guide.md>)",
+      "`[ignored](missing-inline.md)`",
+      "",
+      "```md",
+      "[ignored](missing-fenced.md)",
+      "```",
+      "",
+    ].join("\n"),
+  );
+
+  const report = parseJson(run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]));
+
+  assert.equal(report.ok, true);
+});
+
+test("docs check ignores bare closing-bracket parenthesis text", () => {
+  const target = tempDir();
+  fs.mkdirSync(path.join(target, "docs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, ".agentic-doc-governance.json"),
+    JSON.stringify({ docs: { roots: ["docs"] }, generated: { requiredPaths: [] } }),
+  );
+  fs.writeFileSync(
+    path.join(target, "docs", "README.md"),
+    [
+      "A malformed prose fragment like ](missing.md) is not a link.",
+      "\\[escaped](also-missing.md) is not a link either.",
+      "",
+    ].join("\n"),
+  );
+
+  const report = parseJson(run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]));
+
+  assert.equal(report.ok, true);
+});
+
 test("docs check uses configured feature root and backlog path", () => {
   const target = tempDir();
   fs.mkdirSync(path.join(target, "governance", "features"), { recursive: true });
@@ -1307,6 +1370,8 @@ test("packed package includes self-check footprint and installed CLI can initial
   assert.equal(files.has(".github/workflows/ci.yml"), false);
   assert.equal(files.has("test/cli-and-checkers.test.mjs"), false);
   assert.equal(files.has("scripts/package-metadata-check.mjs"), true);
+  assert.equal(files.has("scripts/lib/cli-feature.mjs"), true);
+  assert.equal(files.has("scripts/lib/cli-init.mjs"), true);
   assert.equal(files.has("scripts/lib/governance-markdown.mjs"), true);
   assert.equal(files.has("scripts/lib/markdown-table.mjs"), true);
 

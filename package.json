@@ -1,6 +1,6 @@
 {
   "name": "agentic-doc-governance-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A template and checker toolkit for AI-agent-readable documentation governance and autonomous feature delivery.",
   "type": "module",
   "sideEffects": false,
