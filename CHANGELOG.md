@@ -23,6 +23,7 @@ All notable changes to this project are tracked here.
 - Aligned the pinned npm package manager with the supported Node 18 runtime range.
 - Added a package lockfile for reproducible development installs.
 - Added public repository health files: contribution guide, security policy, badges, Dependabot, and issue templates.
+- Updated CI workflow actions to current Node 24-compatible major versions.
 
 ## 0.1.0
 
