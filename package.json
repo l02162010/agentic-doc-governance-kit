@@ -7,6 +7,14 @@
   "bin": {
     "agentic-doc-governance": "bin/agentic-doc-governance.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l02162010/agentic-doc-governance-kit.git"
+  },
+  "homepage": "https://github.com/l02162010/agentic-doc-governance-kit#readme",
+  "bugs": {
+    "url": "https://github.com/l02162010/agentic-doc-governance-kit/issues"
+  },
   "files": [
     ".agentic-doc-governance.json",
     "AGENTS.template.md",
