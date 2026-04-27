@@ -155,6 +155,41 @@ test("init dry-run reports files without creating the target", () => {
   assert.equal(fs.existsSync(target), false);
 });
 
+test("init dry-run json exposes the write plan", () => {
+  const target = path.join(tempDir(), "json-dry-run-product");
+
+  const report = parseJson(run([cli, "init", target, "--dry-run", "--json"]));
+
+  assert.equal(report.ok, true);
+  assert.equal(report.target, target);
+  assert.equal(report.files.some((file) => file.path.endsWith("AGENTS.md") && file.action === "create"), true);
+  assert.equal(fs.existsSync(target), false);
+});
+
+test("init force can backup overwritten files", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  fs.writeFileSync(path.join(target, "AGENTS.md"), "# Local changes\n");
+
+  const result = run([cli, "init", target, "--force", "--backup"]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    fs.readdirSync(target).some((name) => name.startsWith("AGENTS.md.bak-")),
+    true,
+  );
+  assert.match(fs.readFileSync(path.join(target, "AGENTS.md"), "utf8"), /# AGENTS\.md/);
+});
+
+test("init backup requires explicit force", () => {
+  const target = path.join(tempDir(), "product");
+
+  const result = run([cli, "init", target, "--backup"]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--backup requires --force/);
+});
+
 test("checkers reject unknown options and missing flag values", () => {
   const unknown = run([path.join(repoRoot, "scripts", "docs-integrity-check.mjs"), "--wat"]);
   assert.equal(unknown.status, 2);
@@ -244,6 +279,85 @@ test("feature add and checkers handle escaped pipe characters in backlog cells",
   assert.match(backlog, /Show status \\\| trends\./);
   assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
   assert.equal(run([cli, "closeout-check", "--root", target, "--feature", "FEAT-003"]).status, 0);
+});
+
+test("feature status updates owner doc and backlog together", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const result = run([
+    cli,
+    "feature",
+    "status",
+    "FEAT-001",
+    "--root",
+    target,
+    "--to",
+    "VERIFYING",
+    "--note",
+    "Ready for verification.",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const featureText = fs.readFileSync(path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md"), "utf8");
+  assert.match(featureText, /> Status: `VERIFYING`/);
+  assert.match(featureText, /Ready for verification\./);
+  assert.match(
+    fs.readFileSync(path.join(target, "docs", "canonical", "active-backlog.md"), "utf8"),
+    /\| `FEAT-001` \| Example Feature \| `VERIFYING` \| `P1` \|/,
+  );
+  assert.equal(run([cli, "docs-check", "--root", target, "--check-generated"]).status, 0);
+});
+
+test("feature status dry-run json does not modify files", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featurePath = path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md");
+  const before = fs.readFileSync(featurePath, "utf8");
+
+  const report = parseJson(run([
+    cli,
+    "feature",
+    "status",
+    "FEAT-001",
+    "--root",
+    target,
+    "--to",
+    "VERIFYING",
+    "--dry-run",
+    "--json",
+  ]));
+
+  assert.equal(report.status, "VERIFYING");
+  assert.equal(report.dryRun, true);
+  assert.equal(fs.readFileSync(featurePath, "utf8"), before);
+});
+
+test("feature status refuses shipped transition when closeout would fail", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featurePath = path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md");
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+
+  const result = run([
+    cli,
+    "feature",
+    "status",
+    "FEAT-001",
+    "--root",
+    target,
+    "--to",
+    "SHIPPED",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /closeout check would fail/);
+  assert.match(result.stderr, /SHIPPED_ACCEPTANCE_INCOMPLETE/);
+  assert.match(fs.readFileSync(featurePath, "utf8"), /> Status: `PLANNED`/);
+  assert.match(
+    fs.readFileSync(backlogPath, "utf8"),
+    /\| `FEAT-001` \| Example Feature \| `PLANNED` \| `P1` \|/,
+  );
 });
 
 test("smoke: initialized project supports multiple feature additions and checker wrappers", () => {
@@ -546,6 +660,25 @@ test("docs check validates feature risk tier and primary skill", () => {
   const issues = JSON.parse(result.stdout).issues;
   assert.equal(issues.some((issue) => issue.code === "RISK_TIER_INVALID"), true);
   assert.equal(issues.some((issue) => issue.code === "FEAT_SKILL_MISSING"), true);
+});
+
+test("docs check reports feature owner docs missing required sections", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featurePath = path.join(target, "docs", "canonical", "features", "FEAT-001-example-feature.md");
+  const text = fs.readFileSync(featurePath, "utf8").replace(/\n## Goal\n\n[\s\S]*?\n## Non-goals/, "\n## Non-goals");
+  fs.writeFileSync(featurePath, text);
+
+  const result = run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  const issues = JSON.parse(result.stdout).issues;
+  assert.equal(issues.some((issue) => issue.code === "FEATURE_SECTION_MISSING" && issue.observed.section === "Goal"), true);
 });
 
 test("docs check reports malformed local links instead of crashing", () => {
@@ -985,8 +1118,9 @@ test("packed package includes self-check footprint and installed CLI can initial
   const workspace = tempDir();
   const target = path.join(workspace, "product");
   const { files, cliPath: installedCli } = packAndInstallPackage(workspace);
-  assert.equal(files.has(".github/workflows/ci.yml"), true);
-  assert.equal(files.has("test/cli-and-checkers.test.mjs"), true);
+  assert.equal(files.has(".github/workflows/ci.yml"), false);
+  assert.equal(files.has("test/cli-and-checkers.test.mjs"), false);
+  assert.equal(files.has("scripts/lib/governance-markdown.mjs"), true);
   assert.equal(files.has("scripts/lib/markdown-table.mjs"), true);
 
   const version = run([installedCli, "--version"]);

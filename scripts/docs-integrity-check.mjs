@@ -6,6 +6,15 @@ import process from "node:process";
 import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
+import {
+  extractLinks,
+  hasSection,
+  linkIssueCode,
+  makeIssue,
+  normalizeLink,
+  normalizeRootPath,
+  parseMetadata,
+} from "./lib/governance-markdown.mjs";
 import { parseMarkdownTableRow } from "./lib/markdown-table.mjs";
 
 let options;
@@ -79,68 +88,18 @@ function installedSkillNames() {
   return skills;
 }
 
+const DOC_DOWNGRADE_CONDITION = "Change this rule only through documentation-governance or agent-execution-contract policy.";
+
 function issue(code, severity, ownerDoc, observed, recommendedFix, forbiddenFix) {
-  return {
+  return makeIssue({
     code,
     severity,
     ownerDoc,
-    relatedDocs: [],
     observed,
-    rationale: code,
     recommendedFix,
     forbiddenFix,
-    downgradeCondition: "Change this rule only through documentation-governance or agent-execution-contract policy.",
-    confidence: 1,
-  };
-}
-
-function linkIssueCode(error) {
-  return error.code === "INTERNAL_LINK_OUTSIDE_ROOT" ? error.code : "MALFORMED_INTERNAL_LINK";
-}
-
-function outsideRootError(rawTarget) {
-  const error = new Error(`Local link target escapes configured docs roots: ${rawTarget}`);
-  error.code = "INTERNAL_LINK_OUTSIDE_ROOT";
-  return error;
-}
-
-function normalizeRootPath(relPath) {
-  const normalized = path.posix.normalize(relPath.replace(/\\/g, "/").replace(/^\/+/, ""));
-  return normalized === "." ? "" : normalized.replace(/\/+$/, "");
-}
-
-function isWithinRoot(candidate, allowedRoot) {
-  return allowedRoot === "" || candidate === allowedRoot || candidate.startsWith(`${allowedRoot}/`);
-}
-
-function isWithinConfiguredDocRoots(candidate) {
-  return configuredDocRoots.length === 0 || configuredDocRoots.some((docRoot) => isWithinRoot(candidate, docRoot));
-}
-
-function normalizeLink(ownerDoc, rawTarget) {
-  const target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
-  if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
-  const decoded = decodeURIComponent(target).replace(/\\/g, "/");
-  const base = path.posix.dirname(ownerDoc.replace(/\\/g, "/"));
-  const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
-  const normalized = path.posix.normalize(candidate);
-  if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
-  if (!isWithinConfiguredDocRoots(normalized)) throw outsideRootError(rawTarget);
-  return normalized;
-}
-
-function extractLinks(text) {
-  return [...text.matchAll(/!?\[[^\]\n]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
-}
-
-function parseMetadata(text) {
-  const metadata = {};
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith(">")) break;
-    const match = line.match(/^>\s*([^:]+):\s*(.*)\s*$/);
-    if (match) metadata[match[1].trim()] = match[2].trim().replace(/^`|`$/g, "");
-  }
-  return metadata;
+    downgradeCondition: DOC_DOWNGRADE_CONDITION,
+  });
 }
 
 function featureIdFromPath(file) {
@@ -204,7 +163,7 @@ function parseBacklogRows() {
     let linkError = null;
     if (link) {
       try {
-        docPath = normalizeLink(backlogPath, link);
+        docPath = normalizeLink(backlogPath, link, configuredDocRoots);
       } catch (error) {
         linkError = error.message;
         issues.push(issue(
@@ -264,7 +223,7 @@ for (const doc of docs) {
   for (const rawLink of extractLinks(readText(doc))) {
     let target;
     try {
-      target = normalizeLink(doc, rawLink);
+      target = normalizeLink(doc, rawLink, configuredDocRoots);
     } catch (error) {
       issues.push(issue(
         linkIssueCode(error),
@@ -341,11 +300,24 @@ if (featureRootExists && backlogExists) {
   for (const featureDoc of featureDocs) {
     const id = featureIdFromPath(featureDoc);
     if (!id) continue;
-    const metadata = parseMetadata(readText(featureDoc));
+    const text = readText(featureDoc);
+    const metadata = parseMetadata(text);
     const row = backlogRows.get(id);
     const featureStatus = normalizeFeatureStatus(metadata.Status);
     const riskTier = metadata["Risk tier"]?.replace(/`/g, "").trim() ?? "";
     const primarySkill = metadata["Primary skill"]?.replace(/`/g, "").trim() ?? "";
+    for (const section of config.closeout.requiredFeatureSections) {
+      if (!hasSection(text, section)) {
+        issues.push(issue(
+          "FEATURE_SECTION_MISSING",
+          "error",
+          featureDoc,
+          { id, section },
+          "Restore the required feature owner doc section or update closeout.requiredFeatureSections in governance config.",
+          "Do not leave formal feature owner docs without their planning and verification structure.",
+        ));
+      }
+    }
     if (!isValidFeatureStatus(featureStatus)) {
       issues.push(issue(
         "FEAT_STATUS_INVALID",

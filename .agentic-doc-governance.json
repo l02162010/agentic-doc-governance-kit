@@ -28,6 +28,7 @@
       "scripts/lib/args.mjs",
       "scripts/lib/config.mjs",
       "scripts/lib/feature-lifecycle.mjs",
+      "scripts/lib/governance-markdown.mjs",
       "scripts/lib/markdown-table.mjs",
       "templates/.agentic-doc-governance.json",
       "templates/docs/README.md",

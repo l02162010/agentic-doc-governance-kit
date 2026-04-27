@@ -6,6 +6,14 @@ import process from "node:process";
 import { parseArgs, UsageError } from "./lib/args.mjs";
 import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
+import {
+  extractSection,
+  linkIssueCode,
+  makeIssue as buildIssue,
+  normalizeLink,
+  normalizeRootPath,
+  parseMetadata,
+} from "./lib/governance-markdown.mjs";
 import { parseMarkdownTableRow } from "./lib/markdown-table.mjs";
 
 let options;
@@ -69,56 +77,30 @@ function walk(dirRel, predicate = () => true) {
   return out.sort();
 }
 
+const CLOSEOUT_DOWNGRADE_CONDITION = "Change this rule only through agent-execution-contract or feature-lifecycle governance.";
+
 function addIssue(issues, code, severity, ownerDoc, observed, recommendedFix, forbiddenFix) {
-  issues.push({
+  issues.push(buildIssue({
     code,
     severity,
     ownerDoc,
-    relatedDocs: [],
     observed,
-    rationale: code,
     recommendedFix,
     forbiddenFix,
-    downgradeCondition: "Change this rule only through agent-execution-contract or feature-lifecycle governance.",
-    confidence: 1,
-  });
+    downgradeCondition: CLOSEOUT_DOWNGRADE_CONDITION,
+  }));
 }
 
 function makeIssue(code, severity, ownerDoc, observed, recommendedFix, forbiddenFix) {
-  return {
+  return buildIssue({
     code,
     severity,
     ownerDoc,
-    relatedDocs: [],
     observed,
-    rationale: code,
     recommendedFix,
     forbiddenFix,
-    downgradeCondition: "Change this rule only through agent-execution-contract or feature-lifecycle governance.",
-    confidence: 1,
-  };
-}
-
-function parseMetadata(text) {
-  const metadata = {};
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith(">")) break;
-    const match = line.match(/^>\s*([^:]+):\s*(.*)\s*$/);
-    if (match) metadata[match[1].trim()] = match[2].trim().replace(/^`|`$/g, "");
-  }
-  return metadata;
-}
-
-function extractSection(text, heading) {
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
-  if (start === -1) return "";
-  const section = [];
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (lines[index].startsWith("## ")) break;
-    section.push(lines[index]);
-  }
-  return section.join("\n").trim();
+    downgradeCondition: CLOSEOUT_DOWNGRADE_CONDITION,
+  });
 }
 
 function manifest(text) {
@@ -163,25 +145,6 @@ function hasWaiver(criterion, manifestValues) {
   return Boolean((id && normalizedWaiver.includes(id.toLowerCase())) || (text && normalizedWaiver.includes(text.toLowerCase())));
 }
 
-function linkIssueCode(error) {
-  return error.code === "INTERNAL_LINK_OUTSIDE_ROOT" ? error.code : "MALFORMED_INTERNAL_LINK";
-}
-
-function outsideRootError(rawTarget) {
-  const error = new Error(`Local link target escapes configured root: ${rawTarget}`);
-  error.code = "INTERNAL_LINK_OUTSIDE_ROOT";
-  return error;
-}
-
-function normalizeRootPath(relPath) {
-  const normalized = path.posix.normalize(relPath.replace(/\\/g, "/").replace(/^\/+/, ""));
-  return normalized === "." ? "" : normalized.replace(/\/+$/, "");
-}
-
-function isWithinRoot(candidate, allowedRoot) {
-  return allowedRoot === "" || candidate === allowedRoot || candidate.startsWith(`${allowedRoot}/`);
-}
-
 const configuredDocRoots = config.docs.roots.map(normalizeRootPath);
 const docRootIssues = config.docs.roots
   .filter((docRoot) => !exists(docRoot))
@@ -193,20 +156,6 @@ const docRootIssues = config.docs.roots
     "Create the configured docs root or remove the stale path from .agentic-doc-governance.json.",
     "Do not close out features while configured documentation roots are missing.",
   ));
-
-function normalizeLink(ownerDoc, rawTarget) {
-  const target = rawTarget.trim().replace(/^<|>$/g, "").split("#")[0];
-  if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
-  const decoded = decodeURIComponent(target).replace(/\\/g, "/");
-  const base = path.posix.dirname(ownerDoc.replace(/\\/g, "/"));
-  const candidate = decoded.startsWith("/") ? decoded.slice(1) : path.posix.join(base, decoded);
-  const normalized = path.posix.normalize(candidate);
-  if (normalized === ".." || normalized.startsWith("../")) throw outsideRootError(rawTarget);
-  if (configuredDocRoots.length > 0 && !configuredDocRoots.some((docRoot) => isWithinRoot(normalized, docRoot))) {
-    throw outsideRootError(rawTarget);
-  }
-  return normalized;
-}
 
 function backlogRows(featureId) {
   if (!exists(closeoutConfig.backlogPath)) return [];
@@ -224,7 +173,9 @@ function backlogRows(featureId) {
     let linkErrorCode = null;
     if (link) {
       try {
-        docPath = normalizeLink(closeoutConfig.backlogPath, link);
+        docPath = normalizeLink(closeoutConfig.backlogPath, link, configuredDocRoots, {
+          outsideRootMessage: "Local link target escapes configured root",
+        });
       } catch (error) {
         linkError = error.message;
         linkErrorCode = linkIssueCode(error);

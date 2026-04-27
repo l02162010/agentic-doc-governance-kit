@@ -37,6 +37,7 @@ export const DEFAULT_GENERATED_REQUIRED_PATHS = [
   "scripts/lib/args.mjs",
   "scripts/lib/config.mjs",
   "scripts/lib/feature-lifecycle.mjs",
+  "scripts/lib/governance-markdown.mjs",
   "scripts/lib/markdown-table.mjs",
 ];
 
@@ -67,6 +68,15 @@ export const DEFAULT_CLOSEOUT = {
     "semantic review",
     "acceptance waivers",
     "residual risks",
+  ],
+  requiredFeatureSections: [
+    "Problem",
+    "Goal",
+    "Non-goals",
+    "User-facing Behavior",
+    "Scope",
+    "Acceptance Criteria",
+    "Rollout and Verification",
   ],
 };
 
@@ -114,6 +124,7 @@ export function loadGovernanceConfig(root) {
       formalRiskTiers: arrayValue(closeout.formalRiskTiers, DEFAULT_CLOSEOUT.formalRiskTiers),
       requiredMetadataFields: arrayValue(closeout.requiredMetadataFields, DEFAULT_CLOSEOUT.requiredMetadataFields),
       requiredManifestFields: arrayValue(closeout.requiredManifestFields, DEFAULT_CLOSEOUT.requiredManifestFields),
+      requiredFeatureSections: arrayValue(closeout.requiredFeatureSections, DEFAULT_CLOSEOUT.requiredFeatureSections),
     },
   };
 }

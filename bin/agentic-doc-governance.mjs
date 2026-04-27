@@ -2,12 +2,14 @@
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, UsageError } from "../scripts/lib/args.mjs";
 import { loadGovernanceConfig } from "../scripts/lib/config.mjs";
-import { isValidFeatureStatus, validFeatureStatusList } from "../scripts/lib/feature-lifecycle.mjs";
+import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "../scripts/lib/feature-lifecycle.mjs";
+import { parseMarkdownTableRow } from "../scripts/lib/markdown-table.mjs";
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const command = process.argv[2];
@@ -16,8 +18,10 @@ const args = process.argv.slice(3);
 function usage() {
   console.log(`Usage:
   agentic-doc-governance init <target-dir> [--force]
-  agentic-doc-governance init <target-dir> [--dry-run]
+  agentic-doc-governance init <target-dir> [--dry-run] [--json]
+  agentic-doc-governance init <target-dir> --force --backup
   agentic-doc-governance feature add FEAT-xxx <name> [--root <dir>] [--status IDEA] [--risk T2] [--priority P2] [--summary <text>] [--dry-run]
+  agentic-doc-governance feature status FEAT-xxx --to <status> [--root <dir>] [--note <text>] [--dry-run] [--json]
   agentic-doc-governance docs-check [--root <dir>] [--check-generated] [--json]
   agentic-doc-governance skills-check [--root <dir>] [--json]
   agentic-doc-governance closeout-check --feature FEAT-xxx [--root <dir>] [--json]
@@ -85,15 +89,26 @@ function preflight(files, force) {
   }
 }
 
-function copyFile(source, target) {
+function backupPath(target) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${target}.bak-${stamp}`;
+}
+
+function copyFile(source, target, { backup = false } = {}) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (backup && fs.existsSync(target) && !fs.statSync(target).isDirectory()) {
+    fs.copyFileSync(target, backupPath(target));
+  }
   fs.copyFileSync(source, target);
 }
 
-function init(targetDir, { force, dryRun }) {
+function init(targetDir, { force, backup, dryRun, json }) {
   if (!targetDir) {
     usage();
     process.exit(2);
+  }
+  if (backup && !force) {
+    throw new UsageError("init --backup requires --force so overwrite intent is explicit.");
   }
 
   const target = path.resolve(targetDir);
@@ -101,15 +116,30 @@ function init(targetDir, { force, dryRun }) {
   preflight(files, force);
 
   if (dryRun) {
-    console.log(`Would install Agentic Doc Governance Kit into ${target}`);
-    for (const { target: file } of files) console.log(`- ${file}`);
+    const report = {
+      ok: true,
+      target,
+      force,
+      backup,
+      files: files.map(({ target: file }) => ({
+        path: file,
+        action: fs.existsSync(file) ? "overwrite" : "create",
+      })),
+    };
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`Would install Agentic Doc Governance Kit into ${target}`);
+      for (const file of report.files) console.log(`- ${file.action}: ${file.path}`);
+    }
     return;
   }
 
   fs.mkdirSync(target, { recursive: true });
-  for (const file of files) copyFile(file.source, file.target);
+  for (const file of files) copyFile(file.source, file.target, { backup });
 
-  console.log(`Agentic Doc Governance Kit installed into ${target}`);
+  const report = { ok: true, target, force, backup, files: files.map(({ target: file }) => file) };
+  if (json) console.log(JSON.stringify(report, null, 2));
+  else console.log(`Agentic Doc Governance Kit installed into ${target}`);
 }
 
 function toPosixPath(filePath) {
@@ -260,6 +290,10 @@ function backlogHeader() {
     "| ID | Feature | Status | Priority | Summary | Primary doc |",
     "|---|---|---|---|---|---|",
   ].join("\n");
+}
+
+function findFeatureDocs(featureRoot, featureId) {
+  return walk(featureRoot, (file) => basenameMatchesFeatureId(file, featureId));
 }
 
 function blockingParent(target) {
@@ -419,6 +453,174 @@ function addFeature(argv) {
   console.log(`Created ${featureRel} and indexed ${featureId} in ${config.closeout.backlogPath}`);
 }
 
+function replaceMetadataValue(text, field, value) {
+  const lines = text.split(/\r?\n/);
+  const index = lines.findIndex((line) => line.match(new RegExp(`^>\\s*${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:`)));
+  const replacement = `> ${field}: \`${value}\``;
+  if (index === -1) return `${replacement}\n${text}`;
+  lines[index] = replacement;
+  return lines.join("\n");
+}
+
+function appendStatusNote(text, status, note) {
+  const statusNote = note || `Status updated by \`agentic-doc-governance feature status\`.`;
+  const block = [`### ${status}`, "", statusNote, ""].join("\n");
+  if (text.includes("\n## Status Notes\n")) return `${text.replace(/\s*$/, "\n\n")}${block}`;
+  return `${text.replace(/\s*$/, "\n\n")}## Status Notes\n\n${block}`;
+}
+
+function updateBacklogStatusLine(line, featureId, status, backlogPath) {
+  if (!line.startsWith(`| \`${featureId}\``)) return { line, matched: false };
+  const cells = parseMarkdownTableRow(line);
+  if (cells.length < 6) {
+    throw new UsageError(`Backlog row for ${featureId} is malformed in ${backlogPath}.`);
+  }
+  return {
+    matched: true,
+    line: `| ${cells[0]} | ${escapeTableCell(cells[1])} | \`${status}\` | ${cells[3]} | ${escapeTableCell(cells[4])} | ${cells[5]} |`,
+  };
+}
+
+function updateBacklogStatus(text, featureId, status, backlogPath) {
+  let matches = 0;
+  const lines = text.split(/\r?\n/).map((line) => {
+    const updated = updateBacklogStatusLine(line, featureId, status, backlogPath);
+    if (updated.matched) matches += 1;
+    return updated.line;
+  });
+  if (matches === 0) throw new UsageError(`Feature ${featureId} does not have a backlog row in ${backlogPath}.`);
+  if (matches > 1) throw new UsageError(`Feature ${featureId} has multiple backlog rows in ${backlogPath}.`);
+  return lines.join("\n");
+}
+
+function writeTempText(root, relPath, text) {
+  const target = path.join(root, relPath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, text);
+}
+
+function assertProposedCloseoutPasses({ root, config, featureId, featurePath, backlogPath, nextDoc, nextBacklog }) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "adgk-closeout-"));
+  try {
+    const configPath = path.join(root, ".agentic-doc-governance.json");
+    if (fs.existsSync(configPath)) {
+      fs.copyFileSync(configPath, path.join(tempRoot, ".agentic-doc-governance.json"));
+    }
+    for (const docRoot of config.docs.roots) {
+      fs.mkdirSync(path.join(tempRoot, docRoot), { recursive: true });
+    }
+    writeTempText(tempRoot, path.relative(root, featurePath), nextDoc);
+    writeTempText(tempRoot, path.relative(root, backlogPath), nextBacklog);
+
+    const result = spawnSync(process.execPath, [
+      path.join(KIT_ROOT, "scripts", "agent-closeout-check.mjs"),
+      "--root",
+      tempRoot,
+      "--feature",
+      featureId,
+      "--json",
+    ], { encoding: "utf8" });
+    if (result.status === 0) return;
+
+    let detail = result.stderr || result.stdout;
+    try {
+      const report = JSON.parse(result.stdout);
+      detail = report.issues.map((item) => `${item.code}: ${JSON.stringify(item.observed)}`).join("\n");
+    } catch {
+      // Keep the raw checker output when it is not JSON.
+    }
+    throw new Error(`Refusing to mark ${featureId} as SHIPPED because closeout check would fail:\n${detail}`);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function updateFeatureStatus(argv) {
+  const options = parseArgs(argv.slice(1), {
+    aliases: { h: "help" },
+    flags: {
+      root: { type: "string" },
+      to: { type: "string" },
+      note: { type: "string" },
+      "dry-run": { type: "boolean" },
+      json: { type: "boolean" },
+      help: { type: "boolean" },
+    },
+  });
+  if (options.flags.help) {
+    usage();
+    process.exit(0);
+  }
+
+  const [featureId] = options.positionals;
+  if (options.positionals.length !== 1 || !/^FEAT-\d+$/.test(featureId ?? "")) {
+    throw new UsageError("feature status requires exactly one feature ID like FEAT-002.");
+  }
+  const status = normalizeFeatureStatus(options.flags.to);
+  if (!status) throw new UsageError("feature status requires --to <status>.");
+  if (!isValidFeatureStatus(status)) {
+    throw new UsageError(`Invalid --to ${status}. Expected one of: ${validFeatureStatusList()}.`);
+  }
+  const note = options.flags.note;
+  if (note) assertSingleLine("--note", note);
+
+  const root = path.resolve(options.flags.root ?? process.cwd());
+  const config = loadGovernanceConfig(root);
+  const featureRoot = path.join(root, config.closeout.featureRoot);
+  const backlogPath = path.join(root, config.closeout.backlogPath);
+  const featureDocs = findFeatureDocs(featureRoot, featureId);
+  if (featureDocs.length === 0) throw new UsageError(`Feature ${featureId} does not have an owner doc in ${featureRoot}.`);
+  if (featureDocs.length > 1) {
+    throw new UsageError(`Feature ${featureId} has multiple owner docs:\n${featureDocs.map((file) => `- ${file}`).join("\n")}`);
+  }
+  if (!fs.existsSync(backlogPath)) throw new UsageError(`Feature ${featureId} cannot be updated because backlog is missing: ${backlogPath}`);
+
+  const featurePath = featureDocs[0];
+  const currentDoc = fs.readFileSync(featurePath, "utf8");
+  const currentBacklog = fs.readFileSync(backlogPath, "utf8");
+  const nextDoc = appendStatusNote(replaceMetadataValue(currentDoc, "Status", status), status, note);
+  const nextBacklog = updateBacklogStatus(currentBacklog, featureId, status, backlogPath);
+  const dryRun = Boolean(options.flags["dry-run"]);
+  const json = Boolean(options.flags.json);
+  const report = {
+    ok: true,
+    featureId,
+    status,
+    featurePath,
+    backlogPath,
+    dryRun,
+  };
+
+  if (dryRun) {
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`Would set ${featureId} to ${status}`);
+      console.log(`- ${featurePath}`);
+      console.log(`- ${backlogPath}`);
+    }
+    return;
+  }
+
+  preflightWritableFile(featurePath);
+  preflightWritableFile(backlogPath);
+  if (status === "SHIPPED") {
+    assertProposedCloseoutPasses({
+      root,
+      config,
+      featureId,
+      featurePath,
+      backlogPath,
+      nextDoc,
+      nextBacklog,
+    });
+  }
+  fs.writeFileSync(featurePath, nextDoc);
+  fs.writeFileSync(backlogPath, nextBacklog);
+
+  if (json) console.log(JSON.stringify(report, null, 2));
+  else console.log(`Set ${featureId} to ${status} in owner doc and backlog.`);
+}
+
 try {
   if (!command || command === "--help" || command === "-h") {
     usage();
@@ -431,13 +633,25 @@ try {
     const options = parseArgs(args, {
       flags: {
         force: { type: "boolean" },
+        backup: { type: "boolean" },
         "dry-run": { type: "boolean" },
+        json: { type: "boolean" },
       },
     });
     if (options.positionals.length > 1) throw new UsageError(`init accepts one target directory, got: ${options.positionals.join(" ")}`);
-    init(options.positionals[0], { force: Boolean(options.flags.force), dryRun: Boolean(options.flags["dry-run"]) });
+    init(options.positionals[0], {
+      force: Boolean(options.flags.force),
+      backup: Boolean(options.flags.backup),
+      dryRun: Boolean(options.flags["dry-run"]),
+      json: Boolean(options.flags.json),
+    });
   } else if (command === "feature") {
-    addFeature(args);
+    if (args[0] === "add") addFeature(args);
+    else if (args[0] === "status") updateFeatureStatus(args);
+    else {
+      usage();
+      process.exit(2);
+    }
   } else if (command === "docs-check") {
     runScript("docs-integrity-check.mjs", args);
   } else if (command === "skills-check") {

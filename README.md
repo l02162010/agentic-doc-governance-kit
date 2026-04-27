@@ -41,17 +41,21 @@ npm test
 
 ```bash
 agentic-doc-governance init <target-dir> [--force]
-agentic-doc-governance init <target-dir> [--dry-run]
+agentic-doc-governance init <target-dir> [--dry-run] [--json]
+agentic-doc-governance init <target-dir> --force --backup
 agentic-doc-governance feature add FEAT-xxx <name> [--root <dir>] [--status IDEA] [--risk T2] [--priority P2] [--summary <text>] [--dry-run]
+agentic-doc-governance feature status FEAT-xxx --to <status> [--root <dir>] [--note <text>] [--dry-run] [--json]
 agentic-doc-governance docs-check [--root <dir>] [--check-generated] [--json]
 agentic-doc-governance skills-check [--root <dir>] [--json]
 agentic-doc-governance closeout-check --feature FEAT-xxx [--root <dir>] [--json]
 agentic-doc-governance --version
 ```
 
-`init` preflights every file it would write. Without `--force`, it refuses to overwrite existing files before copying anything.
+`init` preflights every file it would write. Without `--force`, it refuses to overwrite existing files before copying anything. Use `--dry-run --json` to inspect the write plan, and use `--force --backup` when intentionally refreshing an existing install while preserving overwritten file copies next to the originals.
 
 `feature add` creates one feature owner doc and appends one backlog row using the configured `closeout.featureRoot` and `closeout.backlogPath`. It refuses duplicate feature IDs, terminal creation statuses (`SHIPPED`, `ARCHIVED`), priorities outside `P0` through `P3`, and unknown repo-local skills when a skill registry is installed.
+
+`feature status` moves an existing feature through the lifecycle by updating both the owner doc metadata and active backlog row in one operation. The closeout checker still enforces shipped acceptance criteria and manifest evidence.
 
 ## Intended Repo Shape
 
@@ -102,6 +106,7 @@ The checkers intentionally validate a controlled Markdown contract rather than a
 - Backlog priorities use `P0`, `P1`, `P2`, or `P3` unless `.agentic-doc-governance.json` intentionally defines another vocabulary.
 - Backlog cells may contain escaped pipe characters (`\|`), including values produced by `feature add`.
 - Local Markdown links are checked relative to the configured docs root; links that escape the root are rejected.
+- Feature owner docs must keep the configured required sections, including problem, goal, scope, acceptance criteria, and rollout/verification.
 
 ## Core Contract
 
