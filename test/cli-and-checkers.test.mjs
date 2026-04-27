@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { writeTextFilesWithRollback } from "../scripts/lib/cli-feature.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(repoRoot, "bin", "agentic-doc-governance.mjs");
@@ -361,6 +362,28 @@ test("feature status refuses shipped transition when closeout would fail", () =>
     fs.readFileSync(backlogPath, "utf8"),
     /\| `FEAT-001` \| Example Feature \| `PLANNED` \| `P1` \|/,
   );
+});
+
+test("feature status dry-run refuses shipped transition when closeout would fail", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+
+  const result = run([
+    cli,
+    "feature",
+    "status",
+    "FEAT-001",
+    "--root",
+    target,
+    "--to",
+    "SHIPPED",
+    "--dry-run",
+    "--json",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /closeout check would fail/);
+  assert.match(result.stderr, /SHIPPED_ACCEPTANCE_INCOMPLETE/);
 });
 
 test("smoke: initialized project supports multiple feature additions and checker wrappers", () => {
@@ -959,6 +982,39 @@ test("docs check handles controlled markdown link forms and ignores code example
   assert.equal(report.ok, true);
 });
 
+test("backlog primary doc links support balanced parentheses", () => {
+  const target = path.join(tempDir(), "product");
+  assert.equal(run([cli, "init", target]).status, 0);
+  const featureDir = path.join(target, "docs", "canonical", "features");
+  const original = path.join(featureDir, "FEAT-001-example-feature.md");
+  const renamed = path.join(featureDir, "FEAT-001-example(v1).md");
+  fs.renameSync(original, renamed);
+
+  const backlogPath = path.join(target, "docs", "canonical", "active-backlog.md");
+  fs.writeFileSync(
+    backlogPath,
+    fs.readFileSync(backlogPath, "utf8").replace("features/FEAT-001-example-feature.md", "features/FEAT-001-example(v1).md"),
+  );
+
+  const docsReport = parseJson(run([
+    path.join(repoRoot, "scripts", "docs-integrity-check.mjs"),
+    "--root",
+    target,
+    "--json",
+  ]));
+  const closeoutReport = parseJson(run([
+    path.join(repoRoot, "scripts", "agent-closeout-check.mjs"),
+    "--root",
+    target,
+    "--feature",
+    "FEAT-001",
+    "--json",
+  ]));
+
+  assert.equal(docsReport.ok, true);
+  assert.equal(closeoutReport.ok, true);
+});
+
 test("docs check ignores bare closing-bracket parenthesis text", () => {
   const target = tempDir();
   fs.mkdirSync(path.join(target, "docs"), { recursive: true });
@@ -1280,6 +1336,25 @@ test("checker json output is machine readable on success", () => {
 
   assert.equal(report.ok, true);
   assert.equal(Array.isArray(report.issues), true);
+});
+
+test("multi-file writes roll back already-written files on failure", () => {
+  const target = tempDir();
+  const first = path.join(target, "first.md");
+  const blockingParent = path.join(target, "blocked");
+  const second = path.join(blockingParent, "second.md");
+  fs.writeFileSync(first, "before\n");
+  fs.writeFileSync(blockingParent, "not a directory\n");
+
+  assert.throws(
+    () => writeTextFilesWithRollback([
+      { target: first, text: "after\n" },
+      { target: second, text: "never\n" },
+    ]),
+    /EEXIST|ENOTDIR|not a directory/,
+  );
+  assert.equal(fs.readFileSync(first, "utf8"), "before\n");
+  assert.equal(fs.existsSync(second), false);
 });
 
 function packageFixture(overrides = {}) {

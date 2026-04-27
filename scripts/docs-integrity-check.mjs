@@ -8,6 +8,7 @@ import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 import {
   extractLinks,
+  extractFirstInlineLinkDestination,
   hasSection,
   linkIssueCode,
   makeIssue,
@@ -164,7 +165,7 @@ function parseBacklogRows() {
         "Do not invent priority labels without updating governance config.",
       ));
     }
-    const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
+    const link = extractFirstInlineLinkDestination(cells.at(-1) ?? "");
     let docPath = null;
     let linkError = null;
     if (link) {

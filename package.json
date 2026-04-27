@@ -33,7 +33,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "npm@11.11.1",
+  "packageManager": "npm@10.9.8",
   "keywords": [
     "ai-agent",
     "documentation-governance",
@@ -43,6 +43,6 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=18.17"
   }
 }

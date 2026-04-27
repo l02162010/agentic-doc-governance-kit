@@ -19,6 +19,7 @@
       "README.md",
       "RELEASE.md",
       "package.json",
+      "package-lock.json",
       ".github/workflows/ci.yml",
       "bin/agentic-doc-governance.mjs",
       "test/cli-and-checkers.test.mjs",

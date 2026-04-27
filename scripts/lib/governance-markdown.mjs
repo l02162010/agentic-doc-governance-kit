@@ -142,6 +142,10 @@ function extractInlineLinks(text) {
   return links;
 }
 
+export function extractFirstInlineLinkDestination(text) {
+  return extractInlineLinks(text)[0] ?? null;
+}
+
 export function extractLinks(text) {
   const linkableText = stripCodeBlocks(text);
   const inlineLinks = extractInlineLinks(linkableText);

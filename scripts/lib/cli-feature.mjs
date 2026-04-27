@@ -187,6 +187,60 @@ function preflightWritableFile(target, { mustNotExist = false } = {}) {
   if (fs.existsSync(parent)) fs.accessSync(parent, fs.constants.W_OK);
 }
 
+function tempSiblingPath(target) {
+  const suffix = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return path.join(path.dirname(target), `.${path.basename(target)}.tmp-${suffix}`);
+}
+
+function writeTextAtomic(target, text) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temp = tempSiblingPath(target);
+  try {
+    fs.writeFileSync(temp, text);
+    fs.renameSync(temp, target);
+  } catch (error) {
+    fs.rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
+function snapshotFile(target) {
+  if (!fs.existsSync(target)) return { exists: false, text: null };
+  return { exists: true, text: fs.readFileSync(target, "utf8") };
+}
+
+function restoreSnapshot(target, snapshot) {
+  if (snapshot.exists) {
+    writeTextAtomic(target, snapshot.text);
+    return;
+  }
+  fs.rmSync(target, { force: true });
+}
+
+export function writeTextFilesWithRollback(files) {
+  const snapshots = new Map(files.map((file) => [file.target, snapshotFile(file.target)]));
+  const written = [];
+  try {
+    for (const file of files) {
+      writeTextAtomic(file.target, file.text);
+      written.push(file.target);
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const target of written.reverse()) {
+      try {
+        restoreSnapshot(target, snapshots.get(target));
+      } catch (rollbackError) {
+        rollbackErrors.push(`${target}: ${rollbackError.message}`);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      error.message = `${error.message}\nRollback failed:\n${rollbackErrors.join("\n")}`;
+    }
+    throw error;
+  }
+}
+
 function addFeature(argv, { usage }) {
   const subcommand = argv[0];
   if (subcommand === "--help" || subcommand === "-h") {
@@ -306,15 +360,17 @@ function addFeature(argv, { usage }) {
   preflightWritableFile(featurePath, { mustNotExist: true });
   preflightWritableFile(backlogPath);
 
-  fs.mkdirSync(path.dirname(featurePath), { recursive: true });
-  fs.writeFileSync(featurePath, docText);
-  fs.mkdirSync(path.dirname(backlogPath), { recursive: true });
+  let nextBacklog;
   if (!fs.existsSync(backlogPath)) {
-    fs.writeFileSync(backlogPath, `${backlogHeader()}\n${backlogRow}\n`);
+    nextBacklog = `${backlogHeader()}\n${backlogRow}\n`;
   } else {
     const current = fs.readFileSync(backlogPath, "utf8");
-    fs.writeFileSync(backlogPath, `${current.replace(/\s*$/, "\n")}${backlogRow}\n`);
+    nextBacklog = `${current.replace(/\s*$/, "\n")}${backlogRow}\n`;
   }
+  writeTextFilesWithRollback([
+    { target: featurePath, text: docText },
+    { target: backlogPath, text: nextBacklog },
+  ]);
 
   console.log(`Created ${featureRel} and indexed ${featureId} in ${config.closeout.backlogPath}`);
 }
@@ -457,18 +513,6 @@ function updateFeatureStatus(argv, { kitRoot, usage }) {
     dryRun,
   };
 
-  if (dryRun) {
-    if (json) console.log(JSON.stringify(report, null, 2));
-    else {
-      console.log(`Would set ${featureId} to ${status}`);
-      console.log(`- ${featurePath}`);
-      console.log(`- ${backlogPath}`);
-    }
-    return;
-  }
-
-  preflightWritableFile(featurePath);
-  preflightWritableFile(backlogPath);
   if (status === "SHIPPED") {
     assertProposedCloseoutPasses({
       root,
@@ -481,8 +525,22 @@ function updateFeatureStatus(argv, { kitRoot, usage }) {
       nextBacklog,
     });
   }
-  fs.writeFileSync(featurePath, nextDoc);
-  fs.writeFileSync(backlogPath, nextBacklog);
+  if (dryRun) {
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`Would set ${featureId} to ${status}`);
+      console.log(`- ${featurePath}`);
+      console.log(`- ${backlogPath}`);
+    }
+    return;
+  }
+
+  preflightWritableFile(featurePath);
+  preflightWritableFile(backlogPath);
+  writeTextFilesWithRollback([
+    { target: featurePath, text: nextDoc },
+    { target: backlogPath, text: nextBacklog },
+  ]);
 
   if (json) console.log(JSON.stringify(report, null, 2));
   else console.log(`Set ${featureId} to ${status} in owner doc and backlog.`);

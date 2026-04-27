@@ -8,6 +8,7 @@ import { loadGovernanceConfig } from "./lib/config.mjs";
 import { isValidFeatureStatus, normalizeFeatureStatus, validFeatureStatusList } from "./lib/feature-lifecycle.mjs";
 import {
   extractSection,
+  extractFirstInlineLinkDestination,
   linkIssueCode,
   makeIssue as buildIssue,
   normalizeLink,
@@ -173,7 +174,7 @@ function backlogRows(featureId) {
       rows.push({ malformedLine: line });
       continue;
     }
-    const link = cells.at(-1)?.match(/\]\(([^)]+)\)/)?.[1] ?? null;
+    const link = extractFirstInlineLinkDestination(cells.at(-1) ?? "");
     let docPath = null;
     let linkError = null;
     let linkErrorCode = null;
