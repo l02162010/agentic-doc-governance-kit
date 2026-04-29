@@ -6,6 +6,16 @@
 
 A reusable documentation governance framework for AI-agent-managed software projects.
 
+## Languages
+
+- English (canonical): [`README.md`](./README.md)
+- 繁體中文: [`README.zh-TW.md`](./README.zh-TW.md)
+- 简体中文: [`README.zh-CN.md`](./README.zh-CN.md)
+- 日本語: [`README.ja.md`](./README.ja.md)
+- Español: [`README.es.md`](./README.es.md)
+
+> Translations are provided for accessibility. If any wording differs, the English README is the source of truth.
+
 The goal is simple: a user should be able to describe a desired product feature in natural language, and an AI agent should have enough repo-local structure to classify the work, choose the right workflow, implement safely, verify the result, and close it out without relying on chat history as the source of truth.
 
 ## What This Provides
