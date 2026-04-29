@@ -25,6 +25,7 @@
     "RELEASE.md",
     "SECURITY.md",
     "bin",
+    "docs",
     "examples",
     "scripts",
     "templates"

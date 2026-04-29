@@ -41,6 +41,28 @@ Or run this toolkit's own checks:
 npm test
 ```
 
+### 60-Second Quickstart
+
+If you want the shortest successful path:
+
+```bash
+# 1) Initialize target repo footprint
+npx agentic-doc-governance-kit init /path/to/your-project
+
+# 2) Enter target repo
+cd /path/to/your-project
+
+# 3) Verify governance footprint is healthy
+node scripts/docs-integrity-check.mjs --check-generated
+node scripts/skills-integrity-check.mjs
+```
+
+For formal `T1`/`T2` features, add closeout verification:
+
+```bash
+node scripts/agent-closeout-check.mjs --feature FEAT-001
+```
+
 ## AI Agent User Guide
 
 Use this section when the AI agent is the direct operator installing and using the kit for a product repo.
@@ -247,6 +269,33 @@ This repo is the generic core. Each product repo should add its own adapter:
 - checker configuration if the default rules are too broad or too narrow
 
 Do not put project secrets, credentials, private data, or product-specific absolute paths into the generic kit.
+
+## Adoption Checklist
+
+Use this when onboarding a target project. The detailed checklist lives at
+[`docs/canonical/adoption-checklist.md`](docs/canonical/adoption-checklist.md).
+
+- Pre-install: confirm Node version, repository ownership, and branch policy.
+- Install: run `init --dry-run`, then `init`.
+- Validate: run docs/skills/closeout checks.
+- Operationalize: assign skill owners and define release/change policy.
+- Sustain: run periodic governance checks and keep feature lifecycle docs current.
+
+## Troubleshooting: npm proxy warning
+
+If you see `npm warn Unknown env config "http-proxy"` during checks, your
+environment is exporting a deprecated npm config key. The toolkit still runs,
+but you should migrate env vars to supported forms such as:
+
+- `npm_config_proxy`
+- `npm_config_https_proxy`
+
+Example for current shell session:
+
+```bash
+unset npm_config_http-proxy
+unset npm_config_https-proxy
+```
 
 ## Development
 
